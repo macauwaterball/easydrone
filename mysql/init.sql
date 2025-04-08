@@ -200,9 +200,9 @@ INSERT INTO matches (match_number, team1_id, team2_id, match_type, tournament_st
 
 -- 創建示例比賽類型
 INSERT INTO tournaments (tournament_name, tournament_type, start_date, end_date, status) VALUES
-('2023年無人機足球小組循環賽', 'group', NOW(), NOW() + INTERVAL 3 DAY, 'active'),
-('2023年無人機足球淘汰賽', 'knockout', NOW() + INTERVAL 4 DAY, NOW() + INTERVAL 6 DAY, 'pending'),
-('2023年無人機足球綜合賽', 'mixed', NOW(), NOW() + INTERVAL 6 DAY, 'active');
+('2025年無人機足球小組循環賽', 'group', NOW(), NOW() + INTERVAL 3 DAY, 'active'),
+('2025年無人機足球淘汰賽', 'knockout', NOW() + INTERVAL 4 DAY, NOW() + INTERVAL 6 DAY, 'pending'),
+('2025年無人機足球綜合賽', 'mixed', NOW(), NOW() + INTERVAL 6 DAY, 'active');
 
 -- 初始化小組積分表
 INSERT INTO group_standings (group_id, team_id) 
