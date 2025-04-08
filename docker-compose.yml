@@ -1,0 +1,51 @@
+version: '3.8'
+services:
+  web:
+    image: nginx:latest
+    ports:
+      - "9090:80"
+    volumes:
+      - ./src:/var/www/html
+      - ./nginx/conf.d:/etc/nginx/conf.d
+    depends_on:
+      - php
+      - db
+    networks:
+      - webdrone-network
+
+  php:
+    build:
+      context: .
+      dockerfile: Dockerfile.php
+    volumes:
+      - ./src:/var/www/html
+    depends_on:
+      - db
+    networks:
+      - webdrone-network
+    env_file:
+      - .env
+
+  db:
+    image: mysql:8.0
+    container_name: webdrone-mysql
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./mysql/data:/var/lib/mysql
+      - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    env_file:
+      - .env
+    networks:
+      - webdrone-network
+    command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+networks:
+  webdrone-network:
+    driver: bridge
