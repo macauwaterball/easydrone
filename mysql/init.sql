@@ -209,3 +209,8 @@ INSERT INTO group_standings (group_id, team_id)
 SELECT g.group_id, t.team_id 
 FROM team_groups g 
 JOIN teams t ON g.group_id = t.group_id;
+
+-- 添加以下代碼來確保用戶權限
+CREATE USER IF NOT EXISTS 'dronesoccer'@'%' IDENTIFIED BY 'dronesoccer123';
+GRANT ALL PRIVILEGES ON drone_soccer.* TO 'dronesoccer'@'%';
+FLUSH PRIVILEGES;
