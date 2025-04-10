@@ -41,10 +41,33 @@ CREATE TABLE IF NOT EXISTS athletes (
 );
 
 -- 比賽表 - 增加比賽類型選項
+-- 創建比賽表
 CREATE TABLE IF NOT EXISTS matches (
     match_id INT AUTO_INCREMENT PRIMARY KEY,
-    match_number VARCHAR(20) NOT NULL,
+    match_number VARCHAR(50) NOT NULL,
+    team1_id INT NOT NULL,
+    team2_id INT NOT NULL,
+    team1_score INT DEFAULT 0,
+    team2_score INT DEFAULT 0,
+    team1_fouls INT DEFAULT 0,
+    team2_fouls INT DEFAULT 0,
+    match_date DATE NOT NULL,
+    match_time INT DEFAULT 10,
+    start_time DATETIME NULL,
+    end_time DATETIME NULL,
+    match_status ENUM('pending', 'active', 'overtime', 'completed') DEFAULT 'pending',
+    match_type VARCHAR(50) NULL,
     group_id INT NULL,
+    winner_id INT NULL,
+    overtime_time INT NULL,
+    overtime_start_time DATETIME NULL,
+    referee_decision TINYINT(1) DEFAULT 0,
+    FOREIGN KEY (team1_id) REFERENCES teams(team_id),
+    FOREIGN KEY (team2_id) REFERENCES teams(team_id),
+    FOREIGN KEY (group_id) REFERENCES team_groups(group_id) ON DELETE SET NULL
+);
+
+group_id INT NULL,
     team1_id INT NOT NULL,
     team2_id INT NOT NULL,
     team1_score INT DEFAULT 0,

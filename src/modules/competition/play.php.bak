@@ -1,0 +1,941 @@
+<?php
+require_once __DIR__ . '/../../includes/auth_check.php';
+require_once __DIR__ . '/../../config/database.php';
+
+$db = Database::getInstance();
+$pdo = $db->getConnection();
+
+$match_id = $_GET['match_id'] ?? 0;
+
+// 获取比赛信息
+$stmt = $pdo->prepare("
+    SELECT m.*, 
+           t1.team_name as team1_name, 
+           t2.team_name as team2_name,
+           g.group_name
+    FROM matches m
+    JOIN teams t1 ON m.team1_id = t1.team_id
+    JOIN teams t2 ON m.team2_id = t2.team_id
+    LEFT JOIN team_groups g ON m.group_id = g.group_id
+    WHERE m.match_id = ?
+");
+$stmt->execute([$match_id]);
+$match = $stmt->fetch();
+
+if (!$match) {
+    header('Location: /modules/creatematches/list.php');
+    exit;
+}
+
+// 处理比赛开始
+if (isset($_POST['start_match']) && $match['match_status'] === 'pending') {
+    $match_time_minutes = (int)$_POST['match_time_minutes'];
+    $match_time_seconds = (int)$_POST['match_time_seconds'];
+    $match_time = $match_time_minutes + ($match_time_seconds / 60); // 轉換為分鐘（小數形式）
+    $match_time_total_seconds = ($match_time_minutes * 60) + $match_time_seconds; // 總秒數，用於前端顯示
+    
+    try {
+        $stmt = $pdo->prepare("
+            UPDATE matches 
+            SET match_status = 'active', 
+                match_time = ?,
+                match_time_seconds = ?,
+                start_time = NOW()
+            WHERE match_id = ?
+        ");
+        $stmt->execute([$match_time, $match_time_total_seconds, $match_id]);
+        
+        // 重新加载页面以反映更改
+        header("Location: play.php?match_id=$match_id");
+        exit;
+    } catch (PDOException $e) {
+        $error_message = "启用比赛失败: " . $e->getMessage();
+    }
+}
+
+// 处理加时赛
+if (isset($_POST['start_overtime']) && ($match['match_status'] === 'completed' || $match['match_status'] === 'active')) {
+    // 检查是否使用了新的分钟和秒数栏位
+    if (isset($_POST['overtime_time_minutes']) && isset($_POST['overtime_time_seconds'])) {
+        $overtime_time_minutes = (int)$_POST['overtime_time_minutes'];
+        $overtime_time_seconds = (int)$_POST['overtime_time_seconds'];
+        $overtime_time = $overtime_time_minutes + ($overtime_time_seconds / 60);
+        $overtime_time_total_seconds = ($overtime_time_minutes * 60) + $overtime_time_seconds; // 總秒數
+    } else {
+        // 向后兼容，使用旧的栏位
+        $overtime_time = (int)$_POST['overtime_time'];
+        $overtime_time_total_seconds = $overtime_time * 60; // 轉換為秒
+    }
+    
+    // 检查是否已经进行过加时赛
+    if ($match['match_status'] === 'completed' && $match['overtime_time'] > 0) {
+        // 已经进行过加时赛，直接跳转到裁判决定
+        header("Location: play.php?match_id=$match_id&referee_decision=1");
+        exit;
+    }
+    
+    try {
+        $stmt = $pdo->prepare("
+            UPDATE matches 
+            SET match_status = 'overtime', 
+                overtime_time = ?,
+                overtime_time_seconds = ?,
+                overtime_start_time = NOW()
+            WHERE match_id = ?
+        ");
+        $stmt->execute([$overtime_time, $overtime_time_total_seconds, $match_id]);
+        
+        // 重新加载页面以反映更改
+        header("Location: play.php?match_id=$match_id");
+        exit;
+    } catch (PDOException $e) {
+        $error_message = "启用加时赛失败: " . $e->getMessage();
+    }
+}
+
+// 处理裁判决定请求
+if (isset($_GET['referee_decision'])) {
+    // 显示裁判决定表单
+    $show_referee_decision = true;
+}
+
+// 处理裁判决定请求
+if (isset($_POST['referee_decision'])) {
+    $winner_id = $_POST['winner_id'];
+    $team1_score = isset($_POST['team1_score']) ? (int)$_POST['team1_score'] : $match['team1_score'];
+    $team2_score = isset($_POST['team2_score']) ? (int)$_POST['team2_score'] : $match['team2_score'];
+    $team1_fouls = isset($_POST['team1_fouls']) ? (int)$_POST['team1_fouls'] : $match['team1_fouls'];
+    $team2_fouls = isset($_POST['team2_fouls']) ? (int)$_POST['team2_fouls'] : $match['team2_fouls'];
+    
+    try {
+        // 更新比赛结果
+        if ($winner_id == $match['team1_id']) {
+            // 队伍1获胜，不需要修改比分，因为已经从表单获取了
+            $winner_id = $match['team1_id'];
+        } elseif ($winner_id == $match['team2_id']) {
+            // 队伍2获胜，不需要修改比分，因为已经从表单获取了
+            $winner_id = $match['team2_id'];
+        } else {
+            // 平局，不需要修改比分，因为已经从表单获取了
+            $winner_id = null;
+        }
+        
+        $stmt = $pdo->prepare("
+            UPDATE matches 
+            SET match_status = 'completed', 
+                team1_score = ?,
+                team2_score = ?,
+                team1_fouls = ?,
+                team2_fouls = ?,
+                winner_id = ?,
+                referee_decision = 1,
+                end_time = NOW()
+            WHERE match_id = ?
+        ");
+        $stmt->execute([$team1_score, $team2_score, $team1_fouls, $team2_fouls, $winner_id, $match_id]);
+        
+        // 更新小组积分
+        if ($match['group_id']) {
+            updateGroupStandings($pdo, $match['group_id'], $match['team1_id'], $match['team2_id'], $winner_id);
+        }
+        
+        // 重定向到比赛详情页
+        header("Location: /modules/creatematches/view.php?id=$match_id");
+        exit;
+    } catch (PDOException $e) {
+        $error_message = "裁判决定失败: " . $e->getMessage();
+    }
+}
+
+// 处理比赛结束
+if (isset($_POST['end_match']) && ($match['match_status'] === 'active' || $match['match_status'] === 'overtime')) {
+    $team1_score = (int)$_POST['team1_score'];
+    $team2_score = (int)$_POST['team2_score'];
+    $team1_fouls = (int)$_POST['team1_fouls'];
+    $team2_fouls = (int)$_POST['team2_fouls'];
+    
+    try {
+        // 确定获胜者
+        $winner_id = null;
+        if ($team1_score > $team2_score) {
+            $winner_id = $match['team1_id'];
+        } elseif ($team2_score > $team1_score) {
+            $winner_id = $match['team2_id'];
+        }
+        
+        // 检查数据库中是否存在 winner_id 欄位
+        $checkStmt = $pdo->prepare("SHOW COLUMNS FROM matches LIKE 'winner_id'");
+        $checkStmt->execute();
+        $columnExists = $checkStmt->rowCount() > 0;
+        
+        if ($columnExists) {
+            $stmt = $pdo->prepare("
+                UPDATE matches 
+                SET match_status = 'completed', 
+                    team1_score = ?,
+                    team2_score = ?,
+                    team1_fouls = ?,
+                    team2_fouls = ?,
+                    winner_id = ?,
+                    end_time = NOW()
+                WHERE match_id = ?
+            ");
+            $stmt->execute([$team1_score, $team2_score, $team1_fouls, $team2_fouls, $winner_id, $match_id]);
+        } else {
+            // 如果 winner_id 欄位不存在，则不包含它
+            $stmt = $pdo->prepare("
+                UPDATE matches 
+                SET match_status = 'completed', 
+                    team1_score = ?,
+                    team2_score = ?,
+                    team1_fouls = ?,
+                    team2_fouls = ?,
+                    end_time = NOW()
+                WHERE match_id = ?
+            ");
+            $stmt->execute([$team1_score, $team2_score, $team1_fouls, $team2_fouls, $match_id]);
+            
+            // 尝试添加 winner_id 欄位
+            try {
+                $pdo->exec("ALTER TABLE matches ADD COLUMN winner_id INT NULL");
+                
+                // 如果成功添加欄位，则更新获胜者
+                if ($winner_id) {
+                    $updateWinner = $pdo->prepare("UPDATE matches SET winner_id = ? WHERE match_id = ?");
+                    $updateWinner->execute([$winner_id, $match_id]);
+                }
+            } catch (PDOException $e) {
+                // 忽略添加欄位的错误，继续执行
+            }
+        }
+        
+        // 更新小组积分
+        if ($match['group_id']) {
+            updateGroupStandings($pdo, $match['group_id'], $match['team1_id'], $match['team2_id'], $winner_id);
+        }
+        
+        // 重定向到比赛详情页
+        header("Location: /modules/creatematches/view.php?id=$match_id");
+        exit;
+    } catch (PDOException $e) {
+        $error_message = "结束比赛失败: " . $e->getMessage();
+    }
+}
+
+// 更新小组积分的函数
+function updateGroupStandings($pdo, $group_id, $team1_id, $team2_id, $winner_id) {
+    // 开始事务
+    $pdo->beginTransaction();
+    
+    try {
+        // 获取两支队伍的当前积分
+        $stmt = $pdo->prepare("SELECT * FROM group_standings WHERE group_id = ? AND team_id = ?");
+        
+        $stmt->execute([$group_id, $team1_id]);
+        $team1_standing = $stmt->fetch();
+        
+        $stmt->execute([$group_id, $team2_id]);
+        $team2_standing = $stmt->fetch();
+        
+        // 更新队伍1的积分
+        $team1_played = $team1_standing['played'] + 1;
+        $team1_won = $team1_standing['won'];
+        $team1_drawn = $team1_standing['drawn'];
+        $team1_lost = $team1_standing['lost'];
+        $team1_points = $team1_standing['points'];
+        
+        // 更新队伍2的积分
+        $team2_played = $team2_standing['played'] + 1;
+        $team2_won = $team2_standing['won'];
+        $team2_drawn = $team2_standing['drawn'];
+        $team2_lost = $team2_standing['lost'];
+        $team2_points = $team2_standing['points'];
+        
+        // 根据比赛结果更新积分
+        if ($winner_id === $team1_id) {
+            // 队伍1获胜
+            $team1_won += 1;
+            $team1_points += 3; // 胜利得3分
+            $team2_lost += 1;
+            // 失败得0分，不需要增加
+        } elseif ($winner_id === $team2_id) {
+            // 队伍2获胜
+            $team2_won += 1;
+            $team2_points += 3; // 胜利得3分
+            $team1_lost += 1;
+            // 失败得0分，不需要增加
+        } else {
+            // 平局
+            $team1_drawn += 1;
+            $team1_points += 1; // 平局得1分
+            $team2_drawn += 1;
+            $team2_points += 1; // 平局得1分
+        }
+        
+        // 更新数据库
+        $stmt = $pdo->prepare("
+            UPDATE group_standings 
+            SET played = ?, won = ?, drawn = ?, lost = ?, points = ?
+            WHERE group_id = ? AND team_id = ?
+        ");
+        
+        $stmt->execute([$team1_played, $team1_won, $team1_drawn, $team1_lost, $team1_points, $group_id, $team1_id]);
+        $stmt->execute([$team2_played, $team2_won, $team2_drawn, $team2_lost, $team2_points, $group_id, $team2_id]);
+        
+        // 提交事务
+        $pdo->commit();
+        
+        // 添加调试信息
+        error_log("比赛结束 - 小组ID: $group_id, 队伍1: $team1_id (积分: $team1_points), 队伍2: $team2_id (积分: $team2_points), 获胜者: " . ($winner_id ?: '平局'));
+    } catch (PDOException $e) {
+        // 回滚事务
+        $pdo->rollBack();
+        error_log("更新积分失败: " . $e->getMessage());
+        throw $e;
+    }
+}
+
+// 重新获取最新的比赛信息
+$stmt->execute([$match_id]);
+$match = $stmt->fetch();
+
+// Move the database structure check code to the beginning of the file
+try {
+    // 检查是否存在 match_time_seconds 字段
+    $checkStmt = $pdo->prepare("SHOW COLUMNS FROM matches LIKE 'match_time_seconds'");
+    $checkStmt->execute();
+    if ($checkStmt->rowCount() == 0) {
+        // 添加 match_time_seconds 字段
+        $pdo->exec("ALTER TABLE matches ADD COLUMN match_time_seconds INT NULL");
+    }
+    
+    // 检查是否存在 overtime_time_seconds 字段
+    $checkStmt = $pdo->prepare("SHOW COLUMNS FROM matches LIKE 'overtime_time_seconds'");
+    $checkStmt->execute();
+    if ($checkStmt->rowCount() == 0) {
+        // 添加 overtime_time_seconds 字段
+        $pdo->exec("ALTER TABLE matches ADD COLUMN overtime_time_seconds INT NULL");
+    }
+} catch (PDOException $e) {
+    // 忽略错误，继续执行
+}
+
+$pageTitle = '比赛进行：' . $match['team1_name'] . ' vs ' . $match['team2_name'];
+include __DIR__ . '/../../includes/header.php';
+?>
+
+<div class="match-play-container">
+    <h2>比赛进行</h2>
+    
+    <?php if (isset($error_message)): ?>
+        <div class="error-message"><?= htmlspecialchars($error_message) ?></div>
+    <?php endif; ?>
+    
+    <div class="match-info">
+        <?php if ($match['group_id']): ?>
+            <p><strong>小组：</strong> <?= htmlspecialchars($match['group_name']) ?></p>
+        <?php else: ?>
+            <p><strong>比赛类别：</strong> <?= $match['match_type'] ? htmlspecialchars($match['match_type']) : '淘汰赛' ?></p>
+        <?php endif; ?>
+        <p><strong>场次：</strong> <?= htmlspecialchars($match['match_number']) ?></p>
+        <p><strong>状态：</strong> 
+            <?php
+            switch ($match['match_status']) {
+                case 'pending':
+                    echo '待开始';
+                    break;
+                case 'active':
+                    echo '进行中';
+                    break;
+                case 'overtime':
+                    echo '加时赛';
+                    break;
+                case 'completed':
+                    echo '已结束';
+                    break;
+                default:
+                    echo '未知';
+            }
+            ?>
+        </p>
+    </div>
+    
+    <?php if ($match['match_status'] === 'pending'): ?>
+        <!-- 比赛设置表单 -->
+        <div class="match-setup">
+            <h3>开始比赛</h3>
+            <form method="POST" action="">
+                <div class="form-group">
+                    <label for="match_time_minutes">比赛时间：</label>
+                    <input type="number" id="match_time_minutes" name="match_time_minutes" min="0" max="60" value="10" required style="width: 60px;"> 分
+                    <input type="number" id="match_time_seconds" name="match_time_seconds" min="0" max="59" value="0" required style="width: 60px;"> 秒
+                </div>
+                <button type="submit" name="start_match" class="button">开始比赛</button>
+            </form>
+        </div>
+    <?php elseif ($match['match_status'] === 'active' || $match['match_status'] === 'overtime'): ?>
+        <!-- 比赛计分板 -->
+        <div class="scoreboard">
+            <div class="timer-container">
+                <div id="timer">00:00</div>
+                <button id="toggle-timer" class="button">开始计时</button>
+            </div>
+            
+            <div class="teams-container">
+                <div class="team team1">
+                    <h3><?= htmlspecialchars($match['team1_name']) ?></h3>
+                    <div class="score-display">
+                        <div class="score" id="team1-score"><?= $match['team1_score'] ?? 0 ?></div>
+                    </div>
+                    <div class="score-controls">
+                        <button class="score-btn minus" onclick="updateTeam1Score(-1)">-</button>
+                        <button class="score-btn plus" onclick="updateTeam1Score(1)">+</button>
+                    </div>
+                    <div class="fouls-display">
+                        <span>犯规：</span>
+                        <div class="fouls" id="team1-fouls"><?= $match['team1_fouls'] ?? 0 ?></div>
+                    </div>
+                    <div class="fouls-controls">
+                        <button class="foul-btn minus" onclick="updateTeam1Fouls(-1)">-</button>
+                        <button class="foul-btn plus" onclick="updateTeam1Fouls(1)">+</button>
+                    </div>
+                </div>
+                
+                <div class="vs">VS</div>
+                
+                <div class="team team2">
+                    <h3><?= htmlspecialchars($match['team2_name']) ?></h3>
+                    <div class="score-display">
+                        <div class="score" id="team2-score"><?= $match['team2_score'] ?? 0 ?></div>
+                    </div>
+                    <div class="score-controls">
+                        <button class="score-btn minus" onclick="updateTeam2Score(-1)">-</button>
+                        <button class="score-btn plus" onclick="updateTeam2Score(1)">+</button>
+                    </div>
+                    <div class="fouls-display">
+                        <span>犯规：</span>
+                        <div class="fouls" id="team2-fouls"><?= $match['team2_fouls'] ?? 0 ?></div>
+                    </div>
+                    <div class="fouls-controls">
+                        <button class="foul-btn minus" onclick="updateTeam2Fouls(-1)">-</button>
+                        <button class="foul-btn plus" onclick="updateTeam2Fouls(1)">+</button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="match-controls">
+                <form method="POST" action="" id="end-match-form">
+                    <input type="hidden" name="team1_score" id="team1_score_input" value="<?= $match['team1_score'] ?? 0 ?>">
+                    <input type="hidden" name="team2_score" id="team2_score_input" value="<?= $match['team2_score'] ?? 0 ?>">
+                    <input type="hidden" name="team1_fouls" id="team1_fouls_input" value="<?= $match['team1_fouls'] ?? 0 ?>">
+                    <input type="hidden" name="team2_fouls" id="team2_fouls_input" value="<?= $match['team2_fouls'] ?? 0 ?>">
+                    <button type="submit" name="end_match" class="button danger">结束比赛</button>
+                </form>
+                
+                <?php if ($match['match_status'] === 'active'): ?>
+                    <button onclick="showOvertimeDialog()" class="button secondary">加时赛</button>
+                <?php endif; ?>
+            </div>
+            
+            <div class="keyboard-shortcuts">
+                <h4>键盘快捷键：</h4>
+                <ul>
+                    <li><strong>A</strong> - 队伍1得分+1</li>
+                    <li><strong>S</strong> - 队伍1得分-1</li>
+                    <li><strong>D</strong> - 队伍1犯规+1</li>
+                    <li><strong>X</strong> - 队伍1犯规-1</li>
+                    <li><strong>K</strong> - 队伍2得分+1</li>
+                    <li><strong>L</strong> - 队伍2得分-1</li>
+                    <li><strong>M</strong> - 队伍2犯规+1</li>
+                    <li><strong>N</strong> - 队伍2犯规-1</li>
+                    <li><strong>空格</strong> - 开始/暂停计时器</li>
+                </ul>
+            </div>
+        </div>
+        
+        <style>
+            .match-play-container {
+                max-width: 900px;
+                margin: 0 auto;
+                padding: 20px;
+            }
+            
+            .scoreboard {
+                background-color: #f5f5f5;
+                border-radius: 10px;
+                padding: 20px;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            }
+            
+            .timer-container {
+                text-align: center;
+                margin-bottom: 20px;
+            }
+            
+            #timer {
+                font-size: 48px;
+                font-weight: bold;
+                margin-bottom: 10px;
+                font-family: monospace;
+            }
+            
+            .teams-container {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 30px;
+            }
+            
+            .team {
+                flex: 1;
+                text-align: center;
+                padding: 15px;
+                border-radius: 8px;
+                background-color: #fff;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            }
+            
+            .team h3 {
+                margin-top: 0;
+                margin-bottom: 15px;
+                font-size: 20px;
+            }
+            
+            .vs {
+                font-size: 24px;
+                font-weight: bold;
+                margin: 0 20px;
+            }
+            
+            .score-display {
+                margin-bottom: 10px;
+            }
+            
+            .score {
+                font-size: 60px;
+                font-weight: bold;
+                margin: 10px 0;
+            }
+            
+            .score-controls, .fouls-controls {
+                display: flex;
+                justify-content: center;
+                gap: 10px;
+                margin-bottom: 15px;
+            }
+            
+            .score-btn, .foul-btn {
+                width: 40px;
+                height: 40px;
+                font-size: 20px;
+                border-radius: 50%;
+                border: none;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            
+            .score-btn.plus, .foul-btn.plus {
+                background-color: #4CAF50;
+                color: white;
+            }
+            
+            .score-btn.minus, .foul-btn.minus {
+                background-color: #f44336;
+                color: white;
+            }
+            
+            .fouls-display {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin-bottom: 5px;
+            }
+            
+            .fouls {
+                font-size: 24px;
+                font-weight: bold;
+                margin-left: 5px;
+            }
+            
+            .match-controls {
+                display: flex;
+                justify-content: center;
+                gap: 15px;
+                margin-bottom: 20px;
+            }
+            
+            .button {
+                padding: 10px 20px;
+                border: none;
+                border-radius: 5px;
+                cursor: pointer;
+                font-size: 16px;
+                background-color: #2196F3;
+                color: white;
+            }
+            
+            .button.danger {
+                background-color: #f44336;
+            }
+            
+            .button.secondary {
+                background-color: #607D8B;
+            }
+            
+            .keyboard-shortcuts {
+                background-color: #fff;
+                padding: 15px;
+                border-radius: 8px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            }
+            
+            .keyboard-shortcuts h4 {
+                margin-top: 0;
+                margin-bottom: 10px;
+            }
+            
+            .keyboard-shortcuts ul {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px;
+                list-style-type: none;
+                padding: 0;
+                margin: 0;
+            }
+            
+            .keyboard-shortcuts li {
+                flex: 1 0 30%;
+                padding: 5px;
+                background-color: #f5f5f5;
+                border-radius: 4px;
+            }
+            
+            .overtime-dialog {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0,0,0,0.5);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 1000;
+            }
+            
+            .overtime-content {
+                background-color: white;
+                padding: 20px;
+                border-radius: 8px;
+                width: 90%;
+                max-width: 400px;
+            }
+            
+            @media (max-width: 768px) {
+                .teams-container {
+                    flex-direction: column;
+                }
+                
+                .team {
+                    margin-bottom: 20px;
+                    width: 100%;
+                }
+                
+                .vs {
+                    margin: 10px 0;
+                }
+                
+                .keyboard-shortcuts ul {
+                    flex-direction: column;
+                }
+                
+                .keyboard-shortcuts li {
+                    flex: 1 0 100%;
+                }
+            }
+        </style>
+        
+        <script>
+            // 计分板变量
+            let team1Score = <?= $match['team1_score'] ?? 0 ?>;
+            let team2Score = <?= $match['team2_score'] ?? 0 ?>;
+            let team1Fouls = <?= $match['team1_fouls'] ?? 0 ?>;
+            let team2Fouls = <?= $match['team2_fouls'] ?? 0 ?>;
+            
+            // 计时器变量
+            let timerInterval;
+            // 使用 match_time_seconds 或 overtime_time_seconds 如果存在，否则使用旧的计算方式
+            let timeLeft = <?php 
+                if ($match['match_status'] === 'active') {
+                    echo isset($match['match_time_seconds']) && $match['match_time_seconds'] > 0 
+                        ? $match['match_time_seconds'] 
+                        : ($match['match_time'] * 60);
+                } else {
+                    echo isset($match['overtime_time_seconds']) && $match['overtime_time_seconds'] > 0
+                        ? $match['overtime_time_seconds'] 
+                        : ($match['overtime_time'] * 60);
+                }
+            ?>;
+            let timerRunning = false;
+            
+            // 更新计时器显示
+            function updateTimerDisplay() {
+                const minutes = Math.floor(timeLeft / 60);
+                const seconds = timeLeft % 60;
+                document.getElementById('timer').textContent = 
+                    `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            }
+            
+            // 开始/暂停计时器
+            function toggleTimer() {
+                if (timerRunning) {
+                    clearInterval(timerInterval);
+                    document.getElementById('toggle-timer').textContent = '继续计时';
+                } else {
+                    timerInterval = setInterval(function() {
+                        if (timeLeft > 0) {
+                            timeLeft--;
+                            updateTimerDisplay();
+                        } else {
+                            clearInterval(timerInterval);
+                            document.getElementById('toggle-timer').textContent = '时间结束';
+                            document.getElementById('toggle-timer').disabled = true;
+                            
+                            // 播放提示音
+                            const audio = new Audio('/assets/sounds/buzzer.mp3');
+                            audio.play().catch(e => console.log('无法播放提示音:', e));
+                        }
+                    }, 1000);
+                    document.getElementById('toggle-timer').textContent = '暂停计时';
+                }
+                timerRunning = !timerRunning;
+            }
+            
+            // 更新队伍1得分
+            function updateTeam1Score(change) {
+                team1Score += change;
+                if (team1Score < 0) team1Score = 0;
+                document.getElementById('team1-score').textContent = team1Score;
+                document.getElementById('team1_score_input').value = team1Score;
+            }
+            
+            // 更新队伍2得分
+            function updateTeam2Score(change) {
+                team2Score += change;
+                if (team2Score < 0) team2Score = 0;
+                document.getElementById('team2-score').textContent = team2Score;
+                document.getElementById('team2_score_input').value = team2Score;
+            }
+            
+            // 更新队伍1犯规
+            function updateTeam1Fouls(change) {
+                team1Fouls += change;
+                if (team1Fouls < 0) team1Fouls = 0;
+                document.getElementById('team1-fouls').textContent = team1Fouls;
+                document.getElementById('team1_fouls_input').value = team1Fouls;
+            }
+            
+            // 更新队伍2犯规
+            function updateTeam2Fouls(change) {
+                team2Fouls += change;
+                if (team2Fouls < 0) team2Fouls = 0;
+                document.getElementById('team2-fouls').textContent = team2Fouls;
+                document.getElementById('team2_fouls_input').value = team2Fouls;
+            }
+            
+            // 键盘快捷键
+            document.addEventListener('keydown', function(event) {
+                switch(event.key.toLowerCase()) {
+                    case 'a':
+                        updateTeam1Score(1);
+                        break;
+                    case 's':
+                        updateTeam1Score(-1);
+                        break;
+                    case 'd':
+                        updateTeam1Fouls(1);
+                        break;
+                    case 'x':
+                        updateTeam1Fouls(-1);
+                        break;
+                    case 'k':
+                        updateTeam2Score(1);
+                        break;
+                    case 'l':
+                        updateTeam2Score(-1);
+                        break;
+                    case 'm':
+                        updateTeam2Fouls(1);
+                        break;
+                    case 'n':
+                        updateTeam2Fouls(-1);
+                        break;
+                    case ' ':
+                        toggleTimer();
+                        event.preventDefault(); // 防止空格键滚动页面
+                        break;
+                }
+            });
+            
+            // 初始化计时器显示
+            updateTimerDisplay();
+            
+            // 添加计时器按钮事件监听
+            document.getElementById('toggle-timer').addEventListener('click', toggleTimer);
+            
+            // 显示加时赛对话框
+            function showOvertimeDialog() {
+                const overtimeDialog = document.createElement('div');
+                overtimeDialog.className = 'overtime-dialog';
+                overtimeDialog.innerHTML = `
+                    <div class="overtime-content">
+                        <h3>进入加时赛</h3>
+                        <form method="POST" action="">
+                            <div class="form-group">
+                                <label for="overtime_time_minutes">加时赛时间：</label>
+                                <input type="number" id="overtime_time_minutes" name="overtime_time_minutes" min="0" max="10" value="2" required style="width: 60px;"> 分
+                                <input type="number" id="overtime_time_seconds" name="overtime_time_seconds" min="0" max="59" value="0" required style="width: 60px;"> 秒
+                            </div>
+                            <div class="form-actions">
+                                <button type="submit" name="start_overtime" class="button">开始加时赛</button>
+                                <button type="button" id="cancel-overtime" class="button secondary">取消</button>
+                            </div>
+                        </form>
+                    </div>
+                `;
+                
+                document.body.appendChild(overtimeDialog);
+                
+                document.getElementById('cancel-overtime').addEventListener('click', function() {
+                    document.body.removeChild(overtimeDialog);
+                });
+            }
+            
+            // 显示裁判决定对话框
+            function showRefereeDecisionDialog() {
+                const refereeDialog = document.createElement('div');
+                refereeDialog.className = 'overtime-dialog';
+                refereeDialog.innerHTML = `
+                    <div class="overtime-content">
+                        <h3>裁判决定</h3>
+                        <p>比赛结束，请裁判决定结果：</p>
+.                        <div class="referee-buttons">
+                            <button type="button" class="button" onclick="submitRefereeDecision(<?= $match['team1_id'] ?>)"><?= htmlspecialchars($match['team1_name']) ?> 获胜</button>
+                            <button type="button" class="button secondary" onclick="submitRefereeDecision(0)">平局</button>
+                            <button type="button" class="button" onclick="submitRefereeDecision(<?= $match['team2_id'] ?>)"><?= htmlspecialchars($match['team2_name']) ?> 获胜</button>
+                        </div>
+                    </div>
+                `;
+                
+                document.body.appendChild(refereeDialog);
+            }
+            
+            // 提交裁判决定
+            function submitRefereeDecision(winnerId) {
+                // 创建一个表单并提交
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = '';
+                
+                const winnerInput = document.createElement('input');
+                winnerInput.type = 'hidden';
+                winnerInput.name = 'winner_id';
+                winnerInput.value = winnerId;
+                
+                const submitInput = document.createElement('input');
+                submitInput.type = 'hidden';
+                submitInput.name = 'referee_decision';
+                submitInput.value = '1';
+                
+                // 添加当前的比分和犯规
+                const team1ScoreInput = document.createElement('input');
+                team1ScoreInput.type = 'hidden';
+                team1ScoreInput.name = 'team1_score';
+                team1ScoreInput.value = team1Score;
+                
+                const team2ScoreInput = document.createElement('input');
+                team2ScoreInput.type = 'hidden';
+                team2ScoreInput.name = 'team2_score';
+                team2ScoreInput.value = team2Score;
+                
+                const team1FoulsInput = document.createElement('input');
+                team1FoulsInput.type = 'hidden';
+                team1FoulsInput.name = 'team1_fouls';
+                team1FoulsInput.value = team1Fouls;
+                
+                const team2FoulsInput = document.createElement('input');
+                team2FoulsInput.type = 'hidden';
+                team2FoulsInput.name = 'team2_fouls';
+                team2FoulsInput.value = team2Fouls;
+                
+                form.appendChild(winnerInput);
+                form.appendChild(submitInput);
+                form.appendChild(team1ScoreInput);
+                form.appendChild(team2ScoreInput);
+                form.appendChild(team1FoulsInput);
+                form.appendChild(team2FoulsInput);
+                
+                document.body.appendChild(form);
+                form.submit();
+            }
+            
+            // 修改结束比赛按钮的行为
+            document.getElementById('end-match-form').addEventListener('submit', function(event) {
+                // 如果是加时赛状态，则显示裁判决定对话框
+                if ('<?= $match['match_status'] ?>' === 'overtime') {
+                    event.preventDefault();
+                    showRefereeDecisionDialog();
+                }
+                // 否则正常提交表单
+            });
+        </script>
+        
+        <style>
+            /* 添加裁判决定按钮的样式 */
+            .referee-buttons {
+                display: flex;
+                justify-content: space-between;
+                margin-top: 20px;
+            }
+            
+            .referee-buttons .button {
+                flex: 1;
+                margin: 0 5px;
+                padding: 10px;
+                text-align: center;
+            }
+        </style>
+    <?php elseif (isset($show_referee_decision) || isset($_GET['referee_decision'])): ?>
+        <!-- 裁判决定 -->
+        <div class="referee-decision">
+            <h3>裁判决定</h3>
+            <p>加时赛结束，双方比分相同。请裁判决定结果：</p>
+            
+            <form method="POST" action="">
+                <div class="form-group">
+                    <label>
+                        <input type="radio" name="winner_id" value="<?= $match['team1_id'] ?>" required>
+                        <?= htmlspecialchars($match['team1_name']) ?> 获胜
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="radio" name="winner_id" value="<?= $match['team2_id'] ?>">
+                        <?= htmlspecialchars($match['team2_name']) ?> 获胜
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="radio" name="winner_id" value="0">
+                        平局
+                    </label>
+                </div>
+                <button type="submit" name="referee_decision" class="button">确认决定</button>
+            </form>
+        </div>
+    <?php endif; ?>
+</div>
+
+<?php include __DIR__ . '/../../includes/footer.php'; ?>
