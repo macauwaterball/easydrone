@@ -162,6 +162,7 @@ $show_referee_decision = isset($_GET['referee_decision']) ? true : false;
                 <form method="POST" action="" id="end-match-form">
                     <input type="hidden" name="team1_score" id="team1_score_input" value="<?= $match['team1_score'] ?? 0 ?>">
                     <input type="hidden" name="team2_score" id="team2_score_input" value="<?= $match['team2_score'] ?? 0 ?>">
+                    <!-- 确保这些隐藏输入框存在于表单中 -->
                     <input type="hidden" name="team1_fouls" id="team1_fouls_input" value="<?= $match['team1_fouls'] ?? 0 ?>">
                     <input type="hidden" name="team2_fouls" id="team2_fouls_input" value="<?= $match['team2_fouls'] ?? 0 ?>">
                     <button type="submit" name="<?= ($halfTime === 'first_half') ? 'end_first_half' : 'end_match' ?>" class="button danger">
@@ -227,6 +228,12 @@ $show_referee_decision = isset($_GET['referee_decision']) ? true : false;
                         <label>
                             <input type="radio" name="winner_id" value="<?= $match['team2_id'] ?>">
                             <?= htmlspecialchars($match['team2_name']) ?> 获胜
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="radio" name="winner_id" value="0">
+                            平局
                         </label>
                     </div>
                     <input type="hidden" name="team1_score" value="<?= $match['team1_score'] ?>">
@@ -366,8 +373,59 @@ document.addEventListener('DOMContentLoaded', function() {
             // 播放声音提示
             playTimerEndSound();
             
-            // 显示时间结束提示
-            alert('时间结束！');
+            // 显示时间结束提示并根据当前半场状态自动处理
+            if (halfTime === 'first_half') {
+                // 上半场结束，自动提交表单结束上半场
+                if (confirm('上半场时间结束！点击确定进入下半场')) {
+                    // 创建一个新的表单并提交
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    form.action = window.location.href;
+                    
+                    // 添加必要的字段
+                    const fields = {
+                        'end_first_half': '1',
+                        'team1_score': team1Score,
+                        'team2_score': team2Score,
+                        'team1_fouls': team1Fouls,
+                        'team2_fouls': team2Fouls
+                    };
+                    
+                    for (const [name, value] of Object.entries(fields)) {
+                        const input = document.createElement('input');
+                        input.type = 'hidden';
+                        input.name = name;
+                        input.value = value;
+                        form.appendChild(input);
+                    }
+                    
+                    document.body.appendChild(form);
+                    console.log('提交上半场结束表单', fields);
+                    form.submit();
+                }
+            } else if (matchStatus === 'active' && halfTime === 'second_half') {
+                // 下半场结束，检查是否需要加时赛
+                if (team1Score === team2Score && team1Fouls === team2Fouls) {
+                    alert('比赛时间结束！比分和犯规数相同，即将进入加时赛设置');
+                    // 更新隐藏字段的值
+                    document.getElementById('team1_score_input').value = team1Score;
+                    document.getElementById('team2_score_input').value = team2Score;
+                    document.getElementById('team1_fouls_input').value = team1Fouls;
+                    document.getElementById('team2_fouls_input').value = team2Fouls;
+                    // 重定向到加时赛设置页面
+                    window.location.href = `?match_id=${<?= $match_id ?>}&show_overtime=1`;
+                } else {
+                    alert('比赛时间结束！');
+                }
+            } else {
+                // 加时赛结束
+                alert('加时赛时间结束！');
+                if (team1Score === team2Score && team1Fouls === team2Fouls) {
+                    // 加时赛后仍然平局，需要裁判决定
+                    alert('加时赛后仍然平局，需要裁判决定胜负');
+                    window.location.href = `?match_id=${<?= $match_id ?>}&referee_decision=1`;
+                }
+            }
         }
     }
     
@@ -467,193 +525,265 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 
 <style>
-.match-play-container {
-    max-width: 800px;
-    margin: 0 auto;
-    padding: 20px;
-}
-
-.match-info {
-    margin-bottom: 20px;
-    padding: 10px;
-    background-color: #f5f5f5;
-    border-radius: 5px;
-}
-
-.scoreboard {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    margin-bottom: 20px;
-}
-
-.timer-container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    margin-bottom: 20px;
-}
-
-.half-time-indicator {
-    font-size: 1.2em;
-    font-weight: bold;
-    margin-bottom: 5px;
-    color: #333;
-}
-
-#timer {
-    font-size: 3em;
-    font-weight: bold;
-    margin-bottom: 10px;
-}
-
-.teams-container {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    width: 100%;
-    margin-bottom: 20px;
-}
-
-.team {
-    flex: 1;
-    text-align: center;
-    padding: 10px;
-    border-radius: 5px;
-}
-
-.team h3 {
-    margin-top: 0;
-}
-
-.vs {
-    margin: 0 20px;
-    font-size: 1.5em;
-    font-weight: bold;
-}
-
-.score-display {
-    margin-bottom: 10px;
-}
-
-.score {
-    font-size: 3em;
-    font-weight: bold;
-}
-
-.fouls-display {
-    font-size: 1.2em;
-}
-
-.first-half-stats {
-    margin-top: 10px;
-    font-size: 0.9em;
-    color: #666;
-}
-
-.match-controls {
-    margin-top: 20px;
-    text-align: center;
-}
-
-.keyboard-shortcuts {
-    margin-top: 30px;
-    border-top: 1px solid #ddd;
-    padding-top: 10px;
-}
-
-.keyboard-shortcuts ul {
-    columns: 2;
-    list-style-type: none;
-    padding-left: 0;
-}
-
-.keyboard-shortcuts li {
-    margin-bottom: 5px;
-}
-
-.match-result {
-    text-align: center;
-}
-
-.winner {
-    background-color: #e8f5e9;
-    border: 2px solid #4caf50;
-}
-
-.winner-display {
-    margin-top: 20px;
-    font-size: 1.5em;
-    color: #4caf50;
-}
-
-.referee-note {
-    font-size: 0.8em;
-    color: #666;
-    margin-top: 5px;
-}
-
-.match-actions {
-    margin-top: 30px;
-}
-
-.overtime-dialog, .referee-dialog {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.5);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 1000;
-}
-
-.overtime-content, .referee-content {
-    background-color: white;
-    padding: 20px;
-    border-radius: 5px;
-    max-width: 500px;
-    width: 100%;
-}
-
-.form-actions {
-    margin-top: 20px;
-    text-align: center;
-}
-
-.button {
-    display: inline-block;
-    padding: 8px 16px;
-    background-color: #4caf50;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    text-decoration: none;
-    font-size: 14px;
-}
-
-.button:hover {
-    background-color: #45a049;
-}
-
-.button.danger {
-    background-color: #f44336;
-}
-
-.button.danger:hover {
-    background-color: #d32f2f;
-}
-
-.error-message {
-    color: #f44336;
-    margin-bottom: 15px;
-    padding: 10px;
-    background-color: #ffebee;
-    border-radius: 4px;
-}
+    .match-container {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #fff;
+        border-radius: 15px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    }
+    
+    .match-header {
+        text-align: center;
+        margin-bottom: 30px;
+    }
+    
+    .match-status {
+        display: inline-block;
+        margin-bottom: 15px;
+    }
+    
+    .timer-container {
+        text-align: center;
+        margin: 30px 0;
+    }
+    
+    .half-time-indicator {
+        font-size: 2rem;
+        font-weight: bold;
+        margin-bottom: 10px;
+        color: #333;
+        background-color: #f8f9fa;
+        padding: 5px 15px;
+        border-radius: 5px;
+        display: inline-block;
+    }
+    
+    #timer {
+        font-size: 8rem;  /* 大幅增加计时器字体大小 */
+        font-weight: bold;
+        margin: 20px 0;
+        color: #2c3e50;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        font-family: 'Arial', sans-serif;
+        line-height: 1;
+        background-color: #f8f9fa;
+        padding: 20px 40px;
+        border-radius: 15px;
+        display: inline-block;
+        min-width: 300px;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    
+    #toggle-timer {
+        font-size: 1.5rem;
+        padding: 12px 30px;
+        margin-top: 15px;
+        background-color: #2ecc71;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    
+    #toggle-timer:hover {
+        background-color: #27ae60;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 8px rgba(0,0,0,0.15);
+    }
+    
+    .teams-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        width: 100%;
+        margin: 30px 0;
+    }
+    
+    .team {
+        flex: 1;
+        text-align: center;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        transition: all 0.3s ease;
+        margin: 0 15px;
+    }
+    
+    .team1 {
+        background-color: rgba(231, 76, 60, 0.1);
+        border-left: 5px solid #e74c3c;
+    }
+    
+    .team2 {
+        background-color: rgba(52, 152, 219, 0.1);
+        border-left: 5px solid #3498db;
+    }
+    
+    .team h3 {
+        font-size: 2rem;
+        margin-top: 0;
+        margin-bottom: 15px;
+        color: #2c3e50;
+    }
+    
+    .score {
+        font-size: 6rem;  /* 增加分数字体大小 */
+        font-weight: bold;
+        color: #2c3e50;
+        line-height: 1;
+        margin: 15px 0;
+    }
+    
+    .fouls-display {
+        font-size: 1.5rem;
+        margin-top: 15px;
+        background-color: rgba(0,0,0,0.05);
+        padding: 8px 15px;
+        border-radius: 5px;
+        display: inline-block;
+    }
+    
+    .vs {
+        margin: 0 20px;
+        font-size: 3rem;
+        font-weight: bold;
+        color: #7f8c8d;
+    }
+    
+    .match-info {
+        margin-bottom: 20px;
+        padding: 10px;
+        background-color: #f5f5f5;
+        border-radius: 5px;
+    }
+    
+    .scoreboard {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin-bottom: 20px;
+    }
+    
+    .first-half-stats {
+        margin-top: 10px;
+        font-size: 0.9em;
+        color: #666;
+    }
+    
+    .match-controls {
+        margin-top: 30px;
+        text-align: center;
+    }
+    
+    .keyboard-shortcuts {
+        margin-top: 30px;
+        border-top: 1px solid #ddd;
+        padding-top: 10px;
+    }
+    
+    .keyboard-shortcuts ul {
+        columns: 2;
+        list-style-type: none;
+        padding-left: 0;
+    }
+    
+    .keyboard-shortcuts li {
+        margin-bottom: 5px;
+    }
+    
+    .match-result {
+        text-align: center;
+    }
+    
+    .winner {
+        background-color: #e8f5e9;
+        border: 2px solid #4caf50;
+    }
+    
+    .winner-display {
+        margin-top: 20px;
+        font-size: 1.5em;
+        color: #4caf50;
+    }
+    
+    .referee-note {
+        font-size: 0.8em;
+        color: #666;
+        margin-top: 5px;
+    }
+    
+    .match-actions {
+        margin-top: 30px;
+    }
+    
+    .overtime-dialog, .referee-dialog {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 1000;
+    }
+    
+    .overtime-content, .referee-content {
+        background-color: white;
+        padding: 20px;
+        border-radius: 5px;
+        max-width: 500px;
+        width: 100%;
+    }
+    
+    .form-actions {
+        margin-top: 20px;
+        text-align: center;
+    }
+    
+    .button {
+        display: inline-block;
+        padding: 8px 16px;
+        background-color: #4caf50;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        text-decoration: none;
+        font-size: 14px;
+    }
+    
+    .button:hover {
+        background-color: #45a049;
+    }
+    
+    .button.danger {
+        background-color: #f44336;
+    }
+    
+    .button.danger:hover {
+        background-color: #d32f2f;
+    }
+    
+    .error-message {
+        color: #f44336;
+        margin-bottom: 15px;
+        padding: 10px;
+        background-color: #ffebee;
+        border-radius: 4px;
+    }
+    
+    @keyframes pulse {
+        0% { transform: scale(1); }
+        50% { transform: scale(1.05); }
+        100% { transform: scale(1); }
+    }
 </style>
 
+<!-- 删除这里的重复CSS代码 -->
 <?php include __DIR__ . '/../../includes/footer.php'; ?>

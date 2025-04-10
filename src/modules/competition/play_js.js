@@ -26,40 +26,44 @@ function initMatch(initialTeam1Score, initialTeam2Score, initialTeam1Fouls, init
     // 添加计时器按钮事件监听
     document.getElementById('toggle-timer').addEventListener('click', toggleTimer);
     
+    // 美化比賽界面
+    applyMatchStyles();
+    
     // 键盘快捷键
+    // 监听键盘事件
     document.addEventListener('keydown', function(event) {
-        // 如果计时器已结束，不允许修改分数
-        if (timerEnded) return;
-        
-        switch(event.key.toLowerCase()) {
-            case 'a':
-                updateTeam1Score(1);
-                break;
-            case 's':
-                updateTeam1Score(-1);
-                break;
-            case 'd':
-                updateTeam1Fouls(1);
-                break;
-            case 'x':
-                updateTeam1Fouls(-1);
-                break;
-            case 'k':
-                updateTeam2Score(1);
-                break;
-            case 'l':
-                updateTeam2Score(-1);
-                break;
-            case 'm':
-                updateTeam2Fouls(1);
-                break;
-            case 'n':
-                updateTeam2Fouls(-1);
-                break;
-            case ' ':
-                toggleTimer();
-                event.preventDefault(); // 防止空格键滚动页面
-                break;
+        // 确保计时器已启动且比赛正在进行
+        if (timerRunning) {
+            switch(event.key.toUpperCase()) {
+                case 'A': // 队伍1得分+1
+                    updateTeam1Score(1);
+                    break;
+                case 'S': // 队伍1得分-1
+                    updateTeam1Score(-1);
+                    break;
+                case 'D': // 队伍1犯规+1
+                    updateTeam1Fouls(1);
+                    break;
+                case 'Q': // 队伍1犯规-1 (改用Q键替代X键)
+                    updateTeam1Fouls(-1);
+                    break;
+                case 'K': // 队伍2得分+1
+                    updateTeam2Score(1);
+                    break;
+                case 'L': // 队伍2得分-1
+                    updateTeam2Score(-1);
+                    break;
+                case 'M': // 队伍2犯规+1
+                    updateTeam2Fouls(1);
+                    break;
+                case 'W': // 队伍2犯规-1 (改用W键替代Z键)
+                    updateTeam2Fouls(-1);
+                    break;
+                case ' ': // 空格键 - 开始/暂停计时器
+                    toggleTimer();
+                    event.preventDefault(); // 防止页面滾動
+                    break;
+            }
         }
     });
 }
@@ -148,10 +152,28 @@ function updateTeam1Fouls(change) {
     // 如果计时器已结束，不允许修改分数
     if (timerEnded) return;
     
+    console.log('嘗試更新隊伍1犯規:', change);
+    
+    // 檢查元素是否存在
+    const foulsElement = document.getElementById('team1-fouls');
+    const inputElement = document.getElementById('team1_fouls_input');
+    
+    if (!foulsElement) {
+        console.error('找不到元素: team1-fouls');
+        return;
+    }
+    
+    if (!inputElement) {
+        console.error('找不到元素: team1_fouls_input');
+        return;
+    }
+    
     team1Fouls += change;
     if (team1Fouls < 0) team1Fouls = 0;
-    document.getElementById('team1-fouls').textContent = team1Fouls;
-    document.getElementById('team1_fouls_input').value = team1Fouls;
+    foulsElement.textContent = team1Fouls;
+    inputElement.value = team1Fouls;
+    
+    console.log('隊伍1犯規已更新為:', team1Fouls);
 }
 
 // 更新队伍2犯规
@@ -159,10 +181,28 @@ function updateTeam2Fouls(change) {
     // 如果计时器已结束，不允许修改分数
     if (timerEnded) return;
     
+    console.log('嘗試更新隊伍2犯規:', change);
+    
+    // 檢查元素是否存在
+    const foulsElement = document.getElementById('team2-fouls');
+    const inputElement = document.getElementById('team2_fouls_input');
+    
+    if (!foulsElement) {
+        console.error('找不到元素: team2-fouls');
+        return;
+    }
+    
+    if (!inputElement) {
+        console.error('找不到元素: team2_fouls_input');
+        return;
+    }
+    
     team2Fouls += change;
     if (team2Fouls < 0) team2Fouls = 0;
-    document.getElementById('team2-fouls').textContent = team2Fouls;
-    document.getElementById('team2_fouls_input').value = team2Fouls;
+    foulsElement.textContent = team2Fouls;
+    inputElement.value = team2Fouls;
+    
+    console.log('隊伍2犯規已更新為:', team2Fouls);
 }
 
 // 显示加时赛对话框
@@ -267,4 +307,107 @@ function submitRefereeDecision(winnerId) {
     
     document.body.appendChild(form);
     form.submit();
+}
+
+// 應用比賽界面樣式
+function applyMatchStyles() {
+    // 美化計時器
+    const timerElement = document.getElementById('timer');
+    if (timerElement) {
+        timerElement.style.fontSize = '5rem';
+        timerElement.style.fontWeight = 'bold';
+        timerElement.style.textShadow = '2px 2px 4px rgba(0,0,0,0.3)';
+        timerElement.style.color = '#2c3e50';
+        timerElement.style.margin = '20px 0';
+    }
+    
+    // 美化比賽狀態顯示
+    const matchStatusElement = document.querySelector('.match-status');
+    if (matchStatusElement) {
+        matchStatusElement.style.fontSize = '1.8rem';
+        matchStatusElement.style.fontWeight = 'bold';
+        matchStatusElement.style.color = '#3498db';
+        matchStatusElement.style.padding = '10px';
+        matchStatusElement.style.borderRadius = '5px';
+        matchStatusElement.style.backgroundColor = 'rgba(52, 152, 219, 0.1)';
+        matchStatusElement.style.marginBottom = '20px';
+    }
+    
+    // 美化隊伍顯示
+    const teamElements = document.querySelectorAll('.team');
+    teamElements.forEach(team => {
+        team.style.padding = '20px';
+        team.style.borderRadius = '10px';
+        team.style.boxShadow = '0 4px 8px rgba(0,0,0,0.1)';
+        team.style.transition = 'all 0.3s ease';
+    });
+    
+    // 美化隊伍1
+    const team1Element = document.querySelector('.team1');
+    if (team1Element) {
+        team1Element.style.backgroundColor = 'rgba(231, 76, 60, 0.1)';
+        team1Element.style.borderLeft = '5px solid #e74c3c';
+    }
+    
+    // 美化隊伍2
+    const team2Element = document.querySelector('.team2');
+    if (team2Element) {
+        team2Element.style.backgroundColor = 'rgba(52, 152, 219, 0.1)';
+        team2Element.style.borderLeft = '5px solid #3498db';
+    }
+    
+    // 美化分數顯示
+    const scoreElements = document.querySelectorAll('.team-score');
+    scoreElements.forEach(score => {
+        score.style.fontSize = '6rem';
+        score.style.fontWeight = 'bold';
+        score.style.textAlign = 'center';
+        score.style.margin = '10px 0';
+    });
+    
+    // 美化VS顯示
+    const vsElement = document.querySelector('.vs');
+    if (vsElement) {
+        vsElement.style.fontSize = '2.5rem';
+        vsElement.style.fontWeight = 'bold';
+        vsElement.style.color = '#7f8c8d';
+        vsElement.style.margin = '0 20px';
+        vsElement.style.alignSelf = 'center';
+    }
+    
+    // 美化犯規顯示
+    const foulsElements = document.querySelectorAll('.fouls');
+    foulsElements.forEach(fouls => {
+        fouls.style.fontSize = '1.2rem';
+        fouls.style.padding = '5px 10px';
+        fouls.style.borderRadius = '5px';
+        fouls.style.backgroundColor = 'rgba(0,0,0,0.05)';
+        fouls.style.display = 'inline-block';
+        fouls.style.marginTop = '10px';
+    });
+    
+    // 美化按鈕
+    const buttons = document.querySelectorAll('button');
+    buttons.forEach(button => {
+        if (!button.classList.contains('styled')) {
+            button.classList.add('styled');
+            button.style.padding = '10px 20px';
+            button.style.borderRadius = '5px';
+            button.style.border = 'none';
+            button.style.cursor = 'pointer';
+            button.style.fontWeight = 'bold';
+            button.style.transition = 'all 0.3s ease';
+        }
+    });
+    
+    // 特別美化計時器按鈕
+    const timerButton = document.getElementById('toggle-timer');
+    if (timerButton) {
+        timerButton.style.backgroundColor = '#2ecc71';
+        timerButton.style.color = 'white';
+        timerButton.style.fontSize = '1.2rem';
+        timerButton.style.padding = '12px 25px';
+        timerButton.style.marginTop = '15px';
+        timerButton.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
+    }
 }

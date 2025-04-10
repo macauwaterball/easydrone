@@ -1,6 +1,4 @@
 <?php
-require_once __DIR__ . '/play_functions.php';
-
 // 处理比赛开始
 function handleStartMatch($pdo, $match_id, $match) {
     if (!isset($_POST['start_match']) || $match['match_status'] !== 'pending') {
@@ -22,9 +20,9 @@ function handleStartMatch($pdo, $match_id, $match) {
         $stmt = $pdo->prepare("
             UPDATE matches 
             SET match_status = 'active', 
-                half_time = 'first_half',
                 match_time = ?,
                 match_time_seconds = ?,
+                half_time = 'first_half',
                 start_time = NOW()
             WHERE match_id = ?
         ");
@@ -40,14 +38,19 @@ function handleStartMatch($pdo, $match_id, $match) {
 
 // 处理上半场结束，开始下半场
 function handleEndFirstHalf($pdo, $match_id, $match) {
-    if (!isset($_POST['end_first_half']) || $match['match_status'] !== 'active' || $match['half_time'] !== 'first_half') {
+    // 检查是否是结束上半场的请求
+    if (!isset($_POST['end_first_half'])) {
         return null;
     }
     
-    $team1_score = (int)$_POST['team1_score'];
-    $team2_score = (int)$_POST['team2_score'];
-    $team1_fouls = (int)$_POST['team1_fouls'];
-    $team2_fouls = (int)$_POST['team2_fouls'];
+    // 获取表单提交的分数和犯规
+    $team1_score = isset($_POST['team1_score']) ? (int)$_POST['team1_score'] : $match['team1_score'];
+    $team2_score = isset($_POST['team2_score']) ? (int)$_POST['team2_score'] : $match['team2_score'];
+    $team1_fouls = isset($_POST['team1_fouls']) ? (int)$_POST['team1_fouls'] : $match['team1_fouls'];
+    $team2_fouls = isset($_POST['team2_fouls']) ? (int)$_POST['team2_fouls'] : $match['team2_fouls'];
+    
+    // 添加调试信息
+    error_log("处理上半场结束: match_id=$match_id, team1_score=$team1_score, team2_score=$team2_score, team1_fouls=$team1_fouls, team2_fouls=$team2_fouls");
     
     if (endFirstHalf($pdo, $match_id, $team1_score, $team2_score, $team1_fouls, $team2_fouls)) {
         // 重新加载页面以反映更改
@@ -109,41 +112,34 @@ function handleStartOvertime($pdo, $match_id, $match) {
 
 // 处理裁判决定
 function handleRefereeDecision($pdo, $match_id, $match) {
-    if (!isset($_POST['referee_decision']) || $match['match_status'] !== 'overtime') {
-        return null;
-    }
-    
-    $winner_id = (int)$_POST['winner_id'];
-    $team1_score = (int)$_POST['team1_score'];
-    $team2_score = (int)$_POST['team2_score'];
-    $team1_fouls = (int)$_POST['team1_fouls'];
-    $team2_fouls = (int)$_POST['team2_fouls'];
-    
-    try {
+    if (isset($_POST['referee_decision'])) {
+        $winner_id = $_POST['winner_id'];
+        $team1_score = $_POST['team1_score'];
+        $team2_score = $_POST['team2_score'];
+        $team1_fouls = $_POST['team1_fouls'];
+        $team2_fouls = $_POST['team2_fouls'];
+        
+        // 更新比赛结果
         $stmt = $pdo->prepare("
             UPDATE matches 
-            SET match_status = 'completed', 
-                winner_id = ?,
+            SET match_status = 'completed',
                 team1_score = ?,
                 team2_score = ?,
                 team1_fouls = ?,
                 team2_fouls = ?,
-                end_time = NOW()
+                winner_id = ?,
+                referee_decision = 1
             WHERE match_id = ?
         ");
-        $stmt->execute([$winner_id, $team1_score, $team2_score, $team1_fouls, $team2_fouls, $match_id]);
         
-        // 如果是小组赛，更新积分
-        if ($match['group_id']) {
-            updateGroupStandings($pdo, $match['group_id'], $match['team1_id'], $match['team2_id'], $winner_id);
-        }
+        // 这里需要确保 winner_id 为 0 时也能正确处理（表示平局）
+        $stmt->execute([$team1_score, $team2_score, $team1_fouls, $team2_fouls, $winner_id, $match_id]);
         
-        // 重新加载页面以反映更改
+        // 重定向到比赛页面
         header("Location: play.php?match_id=$match_id");
         exit;
-    } catch (PDOException $e) {
-        return "更新比赛结果失败: " . $e->getMessage();
     }
+    return null;
 }
 
 // 处理比赛结束
@@ -219,9 +215,9 @@ function handleEndMatch($pdo, $match_id, $match) {
             
             // 如果犯规也相同，则需要裁判决定
             if ($winner_id === null) {
-                // 显示裁判决定对话框
-                $show_referee_decision = true;
-                return null;
+                // 重定向到裁判决定页面
+                header("Location: play.php?match_id=$match_id&referee_decision=1");
+                exit;
             }
         } else {
             // 根据得分判断胜者
@@ -257,3 +253,5 @@ function handleEndMatch($pdo, $match_id, $match) {
     
     return null;
 }
+
+?>

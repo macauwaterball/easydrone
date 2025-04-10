@@ -202,6 +202,37 @@ function determineWinnerByFouls($team1_id, $team2_id, $team1_fouls, $team2_fouls
 // 结束上半场，开始下半场
 function endFirstHalf($pdo, $match_id, $team1_score, $team2_score, $team1_fouls, $team2_fouls) {
     try {
+        // 开始事务
+        $pdo->beginTransaction();
+        
+        // 获取当前比赛信息
+        $stmt = $pdo->prepare("SELECT * FROM matches WHERE match_id = ?");
+        $stmt->execute([$match_id]);
+        $match = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$match) {
+            $pdo->rollBack();
+            error_log("结束上半场失败: 找不到比赛 ID: $match_id");
+            return false;
+        }
+        
+        // 记录调试信息
+        error_log("比赛状态: {$match['match_status']}, 半场: {$match['half_time']}");
+        error_log("提交的分数: team1=$team1_score, team2=$team2_score, team1犯规=$team1_fouls, team2犯规=$team2_fouls");
+        
+        // 计算下半场的时间（使用原始设置的比赛时间）
+        // 确保使用整数类型进行计算
+        $match_time = isset($match['match_time']) ? (float)$match['match_time'] : 10.0; // 默认10分钟
+        $match_time_seconds = (int)($match_time * 60); // 转换为秒
+        
+        // 确保时间不为0
+        if ($match_time_seconds <= 0) {
+            $match_time_seconds = 180; // 默认10分钟
+        }
+        
+        error_log("设置下半场时间为: $match_time_seconds 秒 (原始match_time: {$match['match_time']})");
+        
+        // 更新比赛状态为下半场，并保存上半场得分
         $stmt = $pdo->prepare("
             UPDATE matches 
             SET half_time = 'second_half',
@@ -212,16 +243,42 @@ function endFirstHalf($pdo, $match_id, $team1_score, $team2_score, $team1_fouls,
                 team1_score = ?,
                 team2_score = ?,
                 team1_fouls = ?,
-                team2_fouls = ?
+                team2_fouls = ?,
+                match_time_seconds = ? 
             WHERE match_id = ?
         ");
+        
         $stmt->execute([
-            $team1_score, $team2_score, $team1_fouls, $team2_fouls,
-            $team1_score, $team2_score, $team1_fouls, $team2_fouls,
+            $team1_score, 
+            $team2_score, 
+            $team1_fouls, 
+            $team2_fouls, 
+            $team1_score, 
+            $team2_score, 
+            $team1_fouls, 
+            $team2_fouls, 
+            $match_time_seconds,
             $match_id
         ]);
+        
+        // 记录SQL执行结果
+        $rowCount = $stmt->rowCount();
+        error_log("更新比赛状态SQL执行结果: " . ($rowCount > 0 ? "成功" : "失败") . " (影响行数: $rowCount)");
+        
+        // 提交事务
+        $pdo->commit();
+        
+        // 再次检查更新是否成功
+        $stmt = $pdo->prepare("SELECT half_time, match_time_seconds FROM matches WHERE match_id = ?");
+        $stmt->execute([$match_id]);
+        $updatedMatch = $stmt->fetch(PDO::FETCH_ASSOC);
+        error_log("更新后的半场状态: " . ($updatedMatch['half_time'] ?? '未知') . ", 时间: " . ($updatedMatch['match_time_seconds'] ?? '未知'));
+        
         return true;
     } catch (PDOException $e) {
+        // 回滚事务
+        $pdo->rollBack();
+        error_log("结束上半场失败: " . $e->getMessage());
         return false;
     }
 }
