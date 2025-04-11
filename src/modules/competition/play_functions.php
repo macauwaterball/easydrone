@@ -220,17 +220,32 @@ function endFirstHalf($pdo, $match_id, $team1_score, $team2_score, $team1_fouls,
         error_log("比赛状态: {$match['match_status']}, 半场: {$match['half_time']}");
         error_log("提交的分数: team1=$team1_score, team2=$team2_score, team1犯规=$team1_fouls, team2犯规=$team2_fouls");
         
-        // 计算下半场的时间（使用原始设置的比赛时间）
-        // 确保使用整数类型进行计算
-        $match_time = isset($match['match_time']) ? (float)$match['match_time'] : 10.0; // 默认10分钟
-        $match_time_seconds = (int)($match_time * 60); // 转换为秒
+        // 获取用户设置的下半场时间（如果有）
+        $second_half_minutes = isset($_POST['second_half_minutes']) ? (int)$_POST['second_half_minutes'] : 0;
+        $second_half_seconds = isset($_POST['second_half_seconds']) ? (int)$_POST['second_half_seconds'] : 0;
+        
+        // 计算下半场的时间（秒）
+        $match_time_seconds = 0;
+        
+        if ($second_half_minutes > 0 || $second_half_seconds > 0) {
+            // 使用用户设置的时间
+            $match_time_seconds = ($second_half_minutes * 60) + $second_half_seconds;
+            error_log("使用用户设置的下半场时间: {$second_half_minutes}分{$second_half_seconds}秒 = {$match_time_seconds}秒");
+        } else {
+            // 使用原始设置的比赛时间
+            $match_time_seconds = isset($match['match_time_seconds']) && $match['match_time_seconds'] > 0 
+                ? $match['match_time_seconds'] 
+                : (isset($match['match_time']) ? (float)$match['match_time'] * 60 : 600);
+            error_log("使用原始比赛时间: {$match_time_seconds}秒");
+        }
         
         // 确保时间不为0
         if ($match_time_seconds <= 0) {
-            $match_time_seconds = 180; // 默认10分钟
+            $match_time_seconds = 600; // 默认10分钟
+            error_log("时间为0，设置为默认值: {$match_time_seconds}秒");
         }
         
-        error_log("设置下半场时间为: $match_time_seconds 秒 (原始match_time: {$match['match_time']})");
+        error_log("设置下半场时间为: $match_time_seconds 秒");
         
         // 更新比赛状态为下半场，并保存上半场得分
         $stmt = $pdo->prepare("

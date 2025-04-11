@@ -375,34 +375,39 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // 显示时间结束提示并根据当前半场状态自动处理
             if (halfTime === 'first_half') {
-                // 上半场结束，自动提交表单结束上半场
-                if (confirm('上半场时间结束！点击确定进入下半场')) {
-                    // 创建一个新的表单并提交
-                    const form = document.createElement('form');
-                    form.method = 'POST';
-                    form.action = window.location.href;
-                    
-                    // 添加必要的字段
-                    const fields = {
-                        'end_first_half': '1',
-                        'team1_score': team1Score,
-                        'team2_score': team2Score,
-                        'team1_fouls': team1Fouls,
-                        'team2_fouls': team2Fouls
-                    };
-                    
-                    for (const [name, value] of Object.entries(fields)) {
-                        const input = document.createElement('input');
-                        input.type = 'hidden';
-                        input.name = name;
-                        input.value = value;
-                        form.appendChild(input);
-                    }
-                    
-                    document.body.appendChild(form);
-                    console.log('提交上半场结束表单', fields);
-                    form.submit();
-                }
+                // 上半场结束，显示对话框让用户确认或修改下半场时间
+                const originalMinutes = Math.floor(<?php 
+                    echo isset($match['match_time_seconds']) ? $match['match_time_seconds'] : ($match['match_time'] * 60); 
+                ?> / 60);
+                const originalSeconds = <?php 
+                    echo isset($match['match_time_seconds']) ? $match['match_time_seconds'] : ($match['match_time'] * 60); 
+                ?> % 60;
+                
+                // 创建自定义对话框
+                const dialog = document.createElement('div');
+                dialog.className = 'overtime-dialog';
+                dialog.innerHTML = `
+                    <div class="overtime-content">
+                        <h3>上半场结束</h3>
+                        <p>请确认下半场时间设置：</p>
+                        <form id="second-half-form" method="POST" action="">
+                            <div class="form-group">
+                                <label for="second_half_minutes">下半场时间：</label>
+                                <input type="number" id="second_half_minutes" name="second_half_minutes" min="0" max="60" value="${originalMinutes}" required style="width: 60px;"> 分
+                                <input type="number" id="second_half_seconds" name="second_half_seconds" min="0" max="59" value="${originalSeconds}" required style="width: 60px;"> 秒
+                            </div>
+                            <input type="hidden" name="end_first_half" value="1">
+                            <input type="hidden" name="team1_score" value="${team1Score}">
+                            <input type="hidden" name="team2_score" value="${team2Score}">
+                            <input type="hidden" name="team1_fouls" value="${team1Fouls}">
+                            <input type="hidden" name="team2_fouls" value="${team2Fouls}">
+                            <div class="form-actions">
+                                <button type="submit" class="button">开始下半场</button>
+                            </div>
+                        </form>
+                    </div>
+                `;
+                document.body.appendChild(dialog);
             } else if (matchStatus === 'active' && halfTime === 'second_half') {
                 // 下半场结束，检查是否需要加时赛
                 if (team1Score === team2Score && team1Fouls === team2Fouls) {

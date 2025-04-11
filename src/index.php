@@ -15,7 +15,7 @@ $stmt = $pdo->query("
     LEFT JOIN teams t1 ON m.team1_id = t1.team_id
     LEFT JOIN teams t2 ON m.team2_id = t2.team_id
     LEFT JOIN team_groups g ON m.group_id = g.group_id
-    ORDER BY m.created_at DESC
+    ORDER BY m.match_date DESC
     LIMIT 5
 ");
 $recent_matches = $stmt->fetchAll();
