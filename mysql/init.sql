@@ -44,10 +44,12 @@ CREATE TABLE IF NOT EXISTS athletes (
 
 -- 比賽表 - 增加比賽類型選項
 -- 創建比賽表
+-- 比賽表
 CREATE TABLE IF NOT EXISTS matches (
+    match_id INT AUTO_INCREMENT PRIMARY KEY,    -- 添加主鍵
     match_number VARCHAR(50) NOT NULL,
-    team1_id INT NULL,
-    team2_id INT NULL,
+    team1_id INT NULL,                         -- 修改為允許 NULL
+    team2_id INT NULL,                         -- 修改為允許 NULL
     team1_score INT DEFAULT 0,
     team2_score INT DEFAULT 0,
     team1_fouls INT DEFAULT 0,
@@ -64,12 +66,13 @@ CREATE TABLE IF NOT EXISTS matches (
     overtime_time INT NULL,
     overtime_start_time DATETIME NULL,
     referee_decision TINYINT(1) DEFAULT 0,
-    FOREIGN KEY (team1_id) REFERENCES teams(team_id),
-    FOREIGN KEY (team2_id) REFERENCES teams(team_id),
-    FOREIGN KEY (group_id) REFERENCES team_groups(group_id) ON DELETE SET NULL
+    FOREIGN KEY (team1_id) REFERENCES teams(team_id) ON DELETE SET NULL,
+    FOREIGN KEY (team2_id) REFERENCES teams(team_id) ON DELETE SET NULL,
+    FOREIGN KEY (group_id) REFERENCES team_groups(group_id) ON DELETE SET NULL,
+    FOREIGN KEY (winner_id) REFERENCES teams(team_id) ON DELETE SET NULL
 );
 
--- 比賽事件表（進球、犯規等）
+-- 修改 match_events 表的外鍵
 CREATE TABLE IF NOT EXISTS match_events (
     event_id INT AUTO_INCREMENT PRIMARY KEY,
     match_id INT NOT NULL,
@@ -83,6 +86,21 @@ CREATE TABLE IF NOT EXISTS match_events (
     FOREIGN KEY (match_id) REFERENCES matches(match_id) ON DELETE CASCADE,
     FOREIGN KEY (team_id) REFERENCES teams(team_id) ON DELETE CASCADE,
     FOREIGN KEY (athlete_id) REFERENCES athletes(athlete_id) ON DELETE SET NULL
+);
+
+-- 修改 knockout_brackets 表
+CREATE TABLE IF NOT EXISTS knockout_brackets (
+    bracket_id INT AUTO_INCREMENT PRIMARY KEY,
+    tournament_id INT NULL,
+    match_id INT NULL,
+    round_number INT NOT NULL,
+    position_in_round INT NOT NULL,
+    next_match_id INT NULL,
+    is_winner_bracket TINYINT(1) DEFAULT 1,    -- 修改為 TINYINT(1)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tournament_id) REFERENCES tournaments(tournament_id) ON DELETE SET NULL,
+    FOREIGN KEY (match_id) REFERENCES matches(match_id) ON DELETE CASCADE,
+    FOREIGN KEY (next_match_id) REFERENCES matches(match_id) ON DELETE SET NULL
 );
 
 -- 新增：比賽類型表
