@@ -45,7 +45,6 @@ CREATE TABLE IF NOT EXISTS athletes (
 -- 比賽表 - 增加比賽類型選項
 -- 創建比賽表
 CREATE TABLE IF NOT EXISTS matches (
-    match_id INT AUTO_INCREMENT PRIMARY KEY,
     match_number VARCHAR(50) NOT NULL,
     team1_id INT NULL,
     team2_id INT NULL,
@@ -134,7 +133,7 @@ FLUSH PRIVILEGES;
 CREATE TABLE IF NOT EXISTS knockout_brackets (
     bracket_id INT AUTO_INCREMENT PRIMARY KEY,
     tournament_id INT NULL,
-    match_id INT NOT NULL,
+    match_id INT NULL,
     round_number INT NOT NULL,
     position_in_round INT NOT NULL,
     next_match_id INT NULL,

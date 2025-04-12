@@ -195,6 +195,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // 創建下一輪比賽（如果需要）
             $next_stage = '';
             $next_match_count = 0;
+            $next_matches = []; // 初始化 $next_matches 數組
             
             if ($tournament_stage == 'round_of_16') {
                 $next_stage = 'quarter_final';
@@ -207,9 +208,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $next_match_count = 1;
             }
             
-            // 在創建下一轮比赛的部分，初始化 $next_matches 数组
+            // 在創建下一輪比賽的部分
             if (!empty($next_stage)) {
-                $next_matches = [];  // 添加这行初始化
                 $next_round_datetime = clone $base_date;
                 $next_round_datetime->modify('+1 hour');
                 
