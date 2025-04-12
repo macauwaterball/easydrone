@@ -117,9 +117,6 @@ function generateRoundRobinMatches($teams) {
     $fixed_team = array_shift($team_ids);
     $rotating_teams = $team_ids;
     
-    // 記錄每個隊伍的比賽場次
-    $team_matches = array_fill_keys(array_column($teams, 'team_id'), []);
-    
     // 生成每輪比賽
     for ($round = 0; $round < $rounds; $round++) {
         $round_matches = [];
@@ -132,10 +129,6 @@ function generateRoundRobinMatches($teams) {
                 'team2_id' => $opponent,
                 'round' => $round + 1
             ];
-            
-            // 記錄這兩支隊伍在這一輪的比賽
-            $team_matches[$fixed_team][] = $round + 1;
-            $team_matches[$opponent][] = $round + 1;
         }
         
         // 其他隊伍的配對
@@ -149,10 +142,6 @@ function generateRoundRobinMatches($teams) {
                     'team2_id' => $team2,
                     'round' => $round + 1
                 ];
-                
-                // 記錄這兩支隊伍在這一輪的比賽
-                $team_matches[$team1][] = $round + 1;
-                $team_matches[$team2][] = $round + 1;
             }
         }
         
@@ -167,24 +156,80 @@ function generateRoundRobinMatches($teams) {
         array_unshift($rotating_teams, $first);
     }
     
-    // 重新排序比賽，避免隊伍連續比賽
-    $optimized_matches = [];
-    $current_round = 1;
-    $max_round = $rounds;
-    
-    // 按輪次重新排序比賽
-    while (count($optimized_matches) < count($matches)) {
-        foreach ($matches as $match) {
-            if ($match['round'] == $current_round) {
-                // 移除輪次信息，只保留隊伍信息
-                unset($match['round']);
-                $optimized_matches[] = $match;
-            }
-        }
-        $current_round = ($current_round % $max_round) + 1;
+    // 重新排序比賽，確保隊伍不會連續比賽
+    $result = [];
+    $team_last_match_index = array_fill_keys($team_ids, -999); // 初始化每支隊伍的上一場比賽索引
+    if ($fixed_team !== null) {
+        $team_last_match_index[$fixed_team] = -999;
     }
     
-    return $optimized_matches;
+    // 按照輪次分組比賽
+    $matches_by_round = [];
+    foreach ($matches as $match) {
+        $round = $match['round'];
+        if (!isset($matches_by_round[$round])) {
+            $matches_by_round[$round] = [];
+        }
+        $matches_by_round[$round][] = $match;
+    }
+    
+    // 交錯安排不同輪次的比賽
+    $current_index = 0;
+    $total_matches = count($matches);
+    $processed_matches = 0;
+    
+    while ($processed_matches < $total_matches) {
+        $best_match = null;
+        $best_score = -1;
+        $best_match_round = 0;
+        $best_match_index = 0;
+        
+        // 尋找所有輪次中最適合的下一場比賽
+        foreach ($matches_by_round as $round => $round_matches) {
+            foreach ($round_matches as $index => $match) {
+                if ($match === null) continue; // 跳過已處理的比賽
+                
+                $team1_id = $match['team1_id'];
+                $team2_id = $match['team2_id'];
+                
+                // 計算這場比賽的適合度分數 (與上一場比賽的間隔)
+                $score1 = $current_index - $team_last_match_index[$team1_id];
+                $score2 = $current_index - $team_last_match_index[$team2_id];
+                $score = min($score1, $score2);
+                
+                // 如果這場比賽比當前最佳選擇更適合，則更新
+                if ($score > $best_score) {
+                    $best_score = $score;
+                    $best_match = $match;
+                    $best_match_round = $round;
+                    $best_match_index = $index;
+                }
+            }
+        }
+        
+        // 如果找到適合的比賽，添加到結果中
+        if ($best_match !== null) {
+            $result[] = [
+                'team1_id' => $best_match['team1_id'],
+                'team2_id' => $best_match['team2_id']
+            ];
+            
+            // 更新隊伍的最後比賽索引
+            $team_last_match_index[$best_match['team1_id']] = $current_index;
+            $team_last_match_index[$best_match['team2_id']] = $current_index;
+            
+            // 標記該比賽為已處理
+            $matches_by_round[$best_match_round][$best_match_index] = null;
+            
+            $current_index++;
+            $processed_matches++;
+        } else {
+            // 如果沒有找到適合的比賽，可能是因為所有比賽都已處理
+            break;
+        }
+    }
+    
+    return $result;
 }
 
 $pageTitle = '創建小組循環賽';

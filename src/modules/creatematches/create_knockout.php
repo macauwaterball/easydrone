@@ -10,6 +10,7 @@ $stmt = $pdo->query("
     SELECT t.*, g.group_name 
     FROM teams t 
     LEFT JOIN team_groups g ON t.group_id = g.group_id 
+    WHERE (t.is_virtual = 0 OR t.is_virtual IS NULL)
     ORDER BY g.group_name, t.team_name
 ");
 $teams = $stmt->fetchAll();
@@ -21,8 +22,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $selected_teams = $_POST['teams'] ?? [];
     $tournament_stage = $_POST['tournament_stage'] ?? '';
     $match_date = $_POST['match_date'] ?? null;
-    $match_time = $_POST['match_time'] ?? 10; // 默認10分鐘
-    $match_interval = $_POST['match_interval'] ?? 30; // 默認間隔30分鐘
+    $match_time = $_POST['match_time'] ?? 12; // 默認12分鐘
+    $match_interval = $_POST['match_interval'] ?? 12; // 默認間隔12分鐘
+    $tournament_name = $_POST['tournament_name'] ?? '淘汰賽';
+    $auto_fill = isset($_POST['auto_fill']) && $_POST['auto_fill'] == 1;
     
     if (count($selected_teams) < 2) {
         $error = '請至少選擇2支隊伍';
@@ -32,66 +35,241 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = '請選擇比賽日期';
     } else {
         try {
-            // 檢查隊伍數量是否為2的冪次方
-            $team_count = count($selected_teams);
-            $is_power_of_two = ($team_count & ($team_count - 1)) === 0;
+            // 開始事務
+            $pdo->beginTransaction();
             
-            if (!$is_power_of_two) {
-                $error = '淘汰賽隊伍數量必須為2的冪次方(2, 4, 8, 16等)';
-            } else {
-                // 開始事務
-                $pdo->beginTransaction();
+            // 確定需要的隊伍數量
+            $required_teams = 0;
+            if ($tournament_stage == 'round_of_16') {
+                $required_teams = 16;
+            } elseif ($tournament_stage == 'quarter_final') {
+                $required_teams = 8;
+            } elseif ($tournament_stage == 'semi_final') {
+                $required_teams = 4;
+            } elseif ($tournament_stage == 'final' || $tournament_stage == 'third_place') {
+                $required_teams = 2;
+            }
+            
+            $team_count = count($selected_teams);
+            
+            // 如果選擇自動填充且隊伍數量不足
+            $virtual_teams = [];
+            if ($auto_fill && $team_count < $required_teams) {
+                $virtual_count = $required_teams - $team_count;
                 
-                // 打亂隊伍順序
-                shuffle($selected_teams);
-                
-                // 計算比賽時間間隔
-                $base_date = new DateTime($match_date);
-                $interval = new DateInterval('PT' . $match_interval . 'M'); // 間隔分鐘
-                
-                // 創建淘汰賽對陣
-                $match_count = 0;
-                for ($i = 0; $i < $team_count; $i += 2) {
-                    $team1_id = $selected_teams[$i];
-                    $team2_id = $selected_teams[$i + 1];
-                    
-                    // 計算比賽時間
-                    $match_datetime = clone $base_date;
-                    if ($match_count > 0) {
-                        $match_datetime->add(new DateInterval('PT' . ($match_interval * $match_count) . 'M'));
-                    }
-                    
-                    // 生成比賽編號
-                    $match_number = strtoupper(substr($tournament_stage, 0, 2)) . '-' . ($match_count + 1);
-                    
+                // 創建虛擬隊伍
+                for ($i = 1; $i <= $virtual_count; $i++) {
                     $stmt = $pdo->prepare("
-                        INSERT INTO matches (
-                            match_number, team1_id, team2_id, 
-                            match_date, match_time, match_status, match_type, tournament_stage
-                        ) VALUES (?, ?, ?, ?, ?, 'pending', 'knockout', ?)
+                        INSERT INTO teams (team_name, team_color, is_virtual) 
+                        VALUES (?, ?, 1)
                     ");
-                    
-                    $stmt->execute([
-                        $match_number,
-                        $team1_id,
-                        $team2_id,
-                        $match_datetime->format('Y-m-d H:i:s'),
-                        $match_time,
-                        $tournament_stage
-                    ]);
-                    
-                    $match_count++;
+                    $virtual_name = "輸空-" . $i;
+                    $stmt->execute([$virtual_name, '#CCCCCC']);
+                    $virtual_team_id = $pdo->lastInsertId();
+                    $virtual_teams[] = $virtual_team_id;
                 }
                 
-                // 提交事務
-                $pdo->commit();
+                // 合併實際隊伍和虛擬隊伍
+                $all_tournament_teams = array_merge($selected_teams, $virtual_teams);
                 
-                $message = "成功創建 $match_count 場淘汰賽";
+                // 打亂隊伍順序
+                shuffle($all_tournament_teams);
                 
-                // 重定向到比賽列表頁面
-                header("Location: list.php?message=" . urlencode($message));
-                exit;
+                // 重新排列，確保虛擬隊伍在左右兩側
+                if (!empty($virtual_teams)) {
+                    $real_teams = array_diff($all_tournament_teams, $virtual_teams);
+                    $half_virtual = ceil(count($virtual_teams) / 2);
+                    
+                    // 左側虛擬隊伍
+                    $left_virtual = array_slice($virtual_teams, 0, $half_virtual);
+                    
+                    // 右側虛擬隊伍
+                    $right_virtual = array_slice($virtual_teams, $half_virtual);
+                    
+                    // 實際隊伍
+                    $middle_teams = $real_teams;
+                    
+                    // 重新組合
+                    $all_tournament_teams = array_merge($left_virtual, $middle_teams, $right_virtual);
+                }
+            } else {
+                // 如果不自動填充，或者隊伍數量已經足夠
+                $all_tournament_teams = $selected_teams;
+                
+                // 檢查隊伍數量是否為2的冪次方
+                if (!$auto_fill && (($team_count & ($team_count - 1)) !== 0 || $team_count > $required_teams)) {
+                    $error = "淘汰賽隊伍數量必須為 $required_teams 支或使用自動填充功能";
+                    throw new Exception($error);
+                }
+                
+                // 打亂隊伍順序
+                shuffle($all_tournament_teams);
             }
+            
+            // 計算比賽時間間隔
+            $base_date = new DateTime($match_date);
+            $base_date->setTime(9, 0); // 設置為上午9點
+            
+            // 創建淘汰賽對陣
+            $match_count = 0;
+            $matches = [];
+            
+            for ($i = 0; $i < count($all_tournament_teams); $i += 2) {
+                if ($i + 1 >= count($all_tournament_teams)) {
+                    break; // 避免數組越界
+                }
+                
+                $team1_id = $all_tournament_teams[$i];
+                $team2_id = $all_tournament_teams[$i + 1];
+                
+                // 計算比賽時間
+                $match_datetime = clone $base_date;
+                $match_datetime->modify('+' . ($match_count * $match_interval) . ' minutes');
+                
+                // 生成比賽編號
+                $match_number = $tournament_name . '-' . ($match_count + 1);
+                
+                // 檢查是否有虛擬隊伍
+                $is_virtual_match = in_array($team1_id, $virtual_teams) || in_array($team2_id, $virtual_teams);
+                $match_status = 'pending';
+                $winner_id = null;
+                
+                // 如果有虛擬隊伍，自動設置另一支隊伍為獲勝者
+                if ($is_virtual_match) {
+                    $match_status = 'completed';
+                    if (in_array($team1_id, $virtual_teams)) {
+                        $winner_id = $team2_id;
+                    } else {
+                        $winner_id = $team1_id;
+                    }
+                }
+                
+                $stmt = $pdo->prepare("
+                    INSERT INTO matches (
+                        match_number, team1_id, team2_id, 
+                        match_date, match_time, match_status, match_type, tournament_stage, winner_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, 'knockout', ?, ?)
+                ");
+                
+                $stmt->execute([
+                    $match_number,
+                    $team1_id,
+                    $team2_id,
+                    $match_datetime->format('Y-m-d H:i:s'),
+                    $match_time,
+                    $match_status,
+                    $tournament_stage,
+                    $winner_id
+                ]);
+                
+                $match_id = $pdo->lastInsertId();
+                $matches[] = [
+                    'match_id' => $match_id,
+                    'team1_id' => $team1_id,
+                    'team2_id' => $team2_id,
+                    'winner_id' => $winner_id
+                ];
+                
+                // 如果是虛擬比賽，自動設置比分
+                if ($is_virtual_match) {
+                    $team1_score = 0;
+                    $team2_score = 0;
+                    
+                    if ($winner_id == $team1_id) {
+                        $team1_score = 3;
+                    } else {
+                        $team2_score = 3;
+                    }
+                    
+                    $stmt = $pdo->prepare("
+                        UPDATE matches 
+                        SET team1_score = ?, team2_score = ?
+                        WHERE match_id = ?
+                    ");
+                    $stmt->execute([$team1_score, $team2_score, $match_id]);
+                }
+                
+                $match_count++;
+            }
+            
+            // 創建下一輪比賽（如果需要）
+            $next_stage = '';
+            $next_match_count = 0;
+            
+            if ($tournament_stage == 'round_of_16') {
+                $next_stage = 'quarter_final';
+                $next_match_count = 4;
+            } elseif ($tournament_stage == 'quarter_final') {
+                $next_stage = 'semi_final';
+                $next_match_count = 2;
+            } elseif ($tournament_stage == 'semi_final') {
+                $next_stage = 'final';
+                $next_match_count = 1;
+            }
+            
+            if (!empty($next_stage)) {
+                // 計算下一輪比賽的時間（第一輪結束後1小時）
+                $next_round_datetime = clone $base_date;
+                $next_round_datetime->modify('+1 hour');
+                
+                for ($i = 0; $i < $next_match_count; $i++) {
+                    $match_count++;
+                    $match_number = $tournament_name . '-' . $match_count;
+                    
+                    // 計算比賽時間
+                    $match_datetime = clone $next_round_datetime;
+                    $match_datetime->modify('+' . ($i * $match_interval) . ' minutes');
+                    
+                    // 創建下一輪比賽
+                    $stmt = $pdo->prepare("
+                        INSERT INTO matches (
+                            match_number, team1_id, team2_id, match_date, match_time,
+                            match_status, match_type, tournament_stage
+                        ) VALUES (?, NULL, NULL, ?, ?, ?, 'knockout', ?)
+                    ");
+                    $stmt->execute([
+                        $match_number,
+                        $match_datetime->format('Y-m-d H:i:s'),
+                        $match_time,
+                        'pending',
+                        $next_stage
+                    ]);
+                }
+                
+                // 如果是半決賽，還需要創建季軍賽
+                if ($next_stage == 'final') {
+                    $match_count++;
+                    $match_number = $tournament_name . '-' . $match_count . '(季軍賽)';
+                    
+                    // 計算季軍賽時間（決賽前30分鐘）
+                    $third_place_datetime = clone $next_round_datetime;
+                    $third_place_datetime->modify('+' . ($next_match_count * $match_interval) . ' minutes');
+                    
+                    // 創建季軍賽
+                    $stmt = $pdo->prepare("
+                        INSERT INTO matches (
+                            match_number, team1_id, team2_id, match_date, match_time,
+                            match_status, match_type, tournament_stage
+                        ) VALUES (?, NULL, NULL, ?, ?, ?, 'knockout', ?)
+                    ");
+                    $stmt->execute([
+                        $match_number,
+                        $third_place_datetime->format('Y-m-d H:i:s'),
+                        $match_time,
+                        'pending',
+                        'third_place'
+                    ]);
+                }
+            }
+            
+            // 提交事務
+            $pdo->commit();
+            
+            $message = "成功創建 $match_count 場淘汰賽";
+            
+            // 重定向到比賽列表頁面
+            header("Location: list.php?message=" . urlencode($message));
+            exit;
         } catch (Exception $e) {
             // 回滾事務
             $pdo->rollBack();
@@ -116,6 +294,32 @@ include __DIR__ . '/../../includes/header.php';
     <?php endif; ?>
     
     <form method="POST" action="">
+        <div class="form-group">
+            <label for="tournament_name">淘汰賽名稱:</label>
+            <input type="text" name="tournament_name" id="tournament_name" required value="淘汰賽">
+        </div>
+        
+        <div class="form-group">
+            <label for="tournament_stage">淘汰賽階段:</label>
+            <select name="tournament_stage" id="tournament_stage" required>
+                <option value="">-- 選擇階段 --</option>
+                <option value="round_of_16">16強賽</option>
+                <option value="quarter_final">1/4決賽</option>
+                <option value="semi_final">半決賽</option>
+                <option value="final">決賽</option>
+                <option value="third_place">季軍賽</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="auto_fill">自動填充虛擬隊伍:</label>
+            <div class="checkbox-wrapper">
+                <input type="checkbox" name="auto_fill" id="auto_fill" value="1" checked>
+                <label for="auto_fill">啟用自動填充（不足的隊伍將使用虛擬隊伍填充）</label>
+            </div>
+            <small>啟用後，系統會自動創建虛擬隊伍（輸空）並安排在左右兩側</small>
+        </div>
+        
         <div class="form-group">
             <label>選擇參賽隊伍:</label>
             <div class="team-selection">
@@ -150,31 +354,19 @@ include __DIR__ . '/../../includes/header.php';
         </div>
         
         <div class="form-group">
-            <label for="tournament_stage">淘汰賽階段:</label>
-            <select name="tournament_stage" id="tournament_stage" required>
-                <option value="">-- 選擇階段 --</option>
-                <option value="round_of_16">16強賽</option>
-                <option value="quarter_final">1/4決賽</option>
-                <option value="semi_final">半決賽</option>
-                <option value="final">決賽</option>
-                <option value="third_place">季軍賽</option>
-            </select>
-        </div>
-        
-        <div class="form-group">
             <label for="match_date">比賽開始日期:</label>
             <input type="date" name="match_date" id="match_date" required value="<?= date('Y-m-d') ?>">
         </div>
         
         <div class="form-group">
             <label for="match_time">每場比賽時長(分鐘):</label>
-            <input type="number" name="match_time" id="match_time" min="1" max="60" value="10" required>
+            <input type="number" name="match_time" id="match_time" min="1" max="60" value="12" required>
         </div>
         
         <div class="form-group">
             <label for="match_interval">比賽間隔時間(分鐘):</label>
-            <input type="number" name="match_interval" id="match_interval" min="10" max="120" value="30" required>
-            <small>建議至少30分鐘，避免隊伍連續比賽</small>
+            <input type="number" name="match_interval" id="match_interval" min="10" max="120" value="12" required>
+            <small>建議至少12分鐘，每小時可安排5場比賽</small>
         </div>
         
         <div class="form-actions">
@@ -186,14 +378,16 @@ include __DIR__ . '/../../includes/header.php';
     <div class="info-box">
         <h3>淘汰賽說明</h3>
         <ul>
-            <li>淘汰賽隊伍數量必須為2的冪次方(2, 4, 8, 16等)</li>
-            <li>系統會隨機打亂隊伍順序，生成對陣表</li>
-            <li>每場比賽的勝者將晉級下一輪</li>
+            <li>啟用自動填充後，系統會自動創建虛擬隊伍（輸空）填充至所需數量</li>
+            <li>虛擬隊伍將被安排在左右兩側，實際隊伍將被安排在中間位置</li>
+            <li>與虛擬隊伍的比賽將自動完成，實際隊伍自動晉級</li>
+            <li>系統會自動創建下一輪比賽，包括決賽和季軍賽</li>
+            <li>每場比賽默認時長為12分鐘，符合每小時5場比賽的要求</li>
             <li>請確保選擇的隊伍數量與淘汰賽階段相匹配：
                 <ul>
-                    <li>16強賽：16支隊伍</li>
-                    <li>1/4決賽：8支隊伍</li>
-                    <li>半決賽：4支隊伍</li>
+                    <li>16強賽：最多16支隊伍</li>
+                    <li>1/4決賽：最多8支隊伍</li>
+                    <li>半決賽：最多4支隊伍</li>
                     <li>決賽/季軍賽：2支隊伍</li>
                 </ul>
             </li>
@@ -215,13 +409,13 @@ document.addEventListener('DOMContentLoaded', function() {
         selectedCountSpan.textContent = `已選擇: ${selectedCount} 隊`;
         
         // 根據選擇的隊伍數量自動選擇淘汰賽階段
-        if (selectedCount === 16) {
+        if (selectedCount <= 16 && selectedCount > 8) {
             tournamentStageSelect.value = 'round_of_16';
-        } else if (selectedCount === 8) {
+        } else if (selectedCount <= 8 && selectedCount > 4) {
             tournamentStageSelect.value = 'quarter_final';
-        } else if (selectedCount === 4) {
+        } else if (selectedCount <= 4 && selectedCount > 2) {
             tournamentStageSelect.value = 'semi_final';
-        } else if (selectedCount === 2) {
+        } else if (selectedCount == 2) {
             tournamentStageSelect.value = 'final';
         }
     }
@@ -234,9 +428,27 @@ document.addEventListener('DOMContentLoaded', function() {
         // 初始化計數
         updateSelectedCount();
     });
-    </script>
     
-    <style>
+    // 取消全選按鈕
+    deselectAllBtn.addEventListener('click', function() {
+        teamCheckboxes.forEach(checkbox => {
+            checkbox.checked = false;
+        });
+        // 初始化計數
+        updateSelectedCount();
+    });
+    
+    // 監聽每個複選框的變化
+    teamCheckboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', updateSelectedCount);
+    });
+    
+    // 初始化計數
+    updateSelectedCount();
+});
+</script>
+    
+<style>
     .create-section {
         max-width: 800px;
         margin: 0 auto;
@@ -258,6 +470,22 @@ document.addEventListener('DOMContentLoaded', function() {
         padding: 8px;
         border: 1px solid #ddd;
         border-radius: 4px;
+    }
+    
+    .checkbox-wrapper {
+        display: flex;
+        align-items: center;
+        margin-bottom: 5px;
+    }
+    
+    .checkbox-wrapper input[type="checkbox"] {
+        width: auto;
+        margin-right: 8px;
+    }
+    
+    .checkbox-wrapper label {
+        display: inline;
+        font-weight: normal;
     }
     
     .team-selection {
@@ -331,6 +559,22 @@ document.addEventListener('DOMContentLoaded', function() {
     
     .info-box h3 {
         margin-top: 0;
+    }
+    
+    .button {
+        padding: 8px 16px;
+        border: none;
+        border-radius: 4px;
+        background-color: #007bff;
+        color: white;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-block;
+        text-align: center;
+    }
+    
+    .button:hover {
+        background-color: #0069d9;
     }
     
     .button.small {
