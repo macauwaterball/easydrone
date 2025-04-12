@@ -5,7 +5,13 @@ require_once __DIR__ . '/../../config/database.php';
 $db = Database::getInstance();
 $pdo = $db->getConnection();
 
-$match_id = $_GET['id'] ?? 0;
+// 獲取比賽ID
+$match_id = $_GET['id'] ?? null;
+
+if (!$match_id) {
+    header('Location: list.php?error=' . urlencode('未指定比賽ID'));
+    exit;
+}
 
 // 獲取比賽信息
 $stmt = $pdo->prepare("
@@ -23,138 +29,153 @@ $stmt->execute([$match_id]);
 $match = $stmt->fetch();
 
 if (!$match) {
-    header('Location: list.php');
+    header('Location: list.php?error=' . urlencode('找不到指定比賽'));
     exit;
 }
 
-$pageTitle = '比賽詳情：' . $match['team1_name'] . ' vs ' . $match['team2_name'];
+$pageTitle = '比賽詳情';
 include __DIR__ . '/../../includes/header.php';
 ?>
 
-<div class="detail-section">
+<div class="view-section">
     <h2>比賽詳情</h2>
     
-    <div class="match-info">
+    <div class="match-card">
         <div class="match-header">
-            <div class="team-vs">
-                <div class="team team1">
-                    <h3><?= htmlspecialchars($match['team1_name']) ?></h3>
-                    <?php if ($match['match_status'] !== 'pending'): ?>
-                        <div class="score"><?= $match['team1_score'] ?></div>
-                    <?php endif; ?>
-                </div>
-                
-                <div class="versus">VS</div>
-                
-                <div class="team team2">
-                    <h3><?= htmlspecialchars($match['team2_name']) ?></h3>
-                    <?php if ($match['match_status'] !== 'pending'): ?>
-                        <div class="score"><?= $match['team2_score'] ?></div>
-                    <?php endif; ?>
-                </div>
+            <span class="match-number"><?= htmlspecialchars($match['match_number']) ?></span>
+            <span class="match-type">
+                <?php
+                if ($match['group_id']) {
+                    echo htmlspecialchars($match['group_name']) . '組';
+                } elseif ($match['tournament_stage']) {
+                    $stages = [
+                        'round_of_16' => '16強賽',
+                        'quarter_final' => '1/4決賽',
+                        'semi_final' => '半決賽',
+                        'final' => '決賽',
+                        'third_place' => '季軍賽'
+                    ];
+                    echo $stages[$match['tournament_stage']] ?? '淘汰賽';
+                } else {
+                    echo '友誼賽';
+                }
+                ?>
+            </span>
+        </div>
+        
+        <div class="match-teams">
+            <div class="team team1">
+                <div class="team-name"><?= htmlspecialchars($match['team1_name']) ?></div>
+                <div class="team-score"><?= ($match['match_status'] !== 'pending') ? $match['team1_score'] : '-' ?></div>
             </div>
-            
-            <?php if (isset($match['winner_id']) && $match['winner_id']): ?>
-                <div class="winner-badge">
-                    <?php
-                    if ($match['winner_id'] == $match['team1_id']) {
-                        echo htmlspecialchars($match['team1_name']);
-                    } else {
-                        echo htmlspecialchars($match['team2_name']);
-                    }
-                    ?> 獲勝
-                    <?= isset($match['referee_decision']) && $match['referee_decision'] ? '（裁判决定）' : '' ?>
-                </div>
-            <?php elseif ($match['match_status'] === 'completed'): ?>
-                <div class="draw-badge">平局</div>
-            <?php endif; ?>
+            <div class="vs">VS</div>
+            <div class="team team2">
+                <div class="team-name"><?= htmlspecialchars($match['team2_name']) ?></div>
+                <div class="team-score"><?= ($match['match_status'] !== 'pending') ? $match['team2_score'] : '-' ?></div>
+            </div>
         </div>
         
         <div class="match-details">
-            <p><strong>比賽編號：</strong> <?= htmlspecialchars($match['match_number']) ?></p>
-            
-            <?php if ($match['group_id']): ?>
-                <p><strong>小組：</strong> <a href="/modules/creategroup/view.php?id=<?= $match['group_id'] ?>"><?= htmlspecialchars($match['group_name']) ?></a></p>
-            <?php else: ?>
-                <p><strong>比賽類型：</strong> <?= $match['match_type'] ? htmlspecialchars($match['match_type']) : '淘汰賽' ?></p>
-            <?php endif; ?>
-            
-            <p><strong>比賽時間：</strong> <?= htmlspecialchars($match['match_date']) ?></p>
-            
-            <p><strong>狀態：</strong> 
-                <?php
-                switch ($match['match_status']) {
-                    case 'pending':
-                        echo '待開始';
-                        break;
-                    case 'active':
-                        echo '進行中';
-                        break;
-                    case 'overtime':
-                        echo '加時賽';
-                        break;
-                    case 'completed':
-                        echo '已完成';
-                        break;
-                }
-                ?>
-            </p>
-            
-            <?php if ($match['match_status'] !== 'pending'): ?>
-                <p><strong>比分：</strong> <?= $match['team1_score'] ?> : <?= $match['team2_score'] ?></p>
-                
-                <?php if ($match['team1_fouls'] > 0 || $match['team2_fouls'] > 0): ?>
-                    <p><strong>犯規：</strong> <?= $match['team1_fouls'] ?> : <?= $match['team2_fouls'] ?></p>
-                <?php endif; ?>
-                
-                <?php if ($match['start_time']): ?>
-                    <p><strong>開始時間：</strong> <?= htmlspecialchars($match['start_time']) ?></p>
-                <?php endif; ?>
-                
-                <?php if ($match['end_time']): ?>
-                    <p><strong>結束時間：</strong> <?= htmlspecialchars($match['end_time']) ?></p>
-                <?php endif; ?>
-                
-                <?php if ($match['match_status'] === 'overtime' || ($match['match_status'] === 'completed' && $match['overtime_time'])): ?>
-                    <p><strong>加時賽：</strong> <?= $match['overtime_time'] ?> 分鐘</p>
-                <?php endif; ?>
+            <div class="detail-item">
+                <span class="label">比賽時間:</span>
+                <span class="value"><?= htmlspecialchars($match['match_date']) ?></span>
+            </div>
+            <div class="detail-item">
+                <span class="label">比賽時長:</span>
+                <span class="value"><?= htmlspecialchars($match['match_time']) ?> 分鐘</span>
+            </div>
+            <div class="detail-item">
+                <span class="label">比賽狀態:</span>
+                <span class="value status-<?= $match['match_status'] ?>">
+                    <?php
+                    switch ($match['match_status']) {
+                        case 'pending':
+                            echo '待開始';
+                            break;
+                        case 'active':
+                            echo '進行中';
+                            break;
+                        case 'overtime':
+                            echo '加時賽';
+                            break;
+                        case 'completed':
+                            echo '已完成';
+                            break;
+                    }
+                    ?>
+                </span>
+            </div>
+            <?php if ($match['match_status'] === 'completed'): ?>
+                <div class="detail-item">
+                    <span class="label">勝者:</span>
+                    <span class="value">
+                        <?php
+                        if ($match['winner_id'] === $match['team1_id']) {
+                            echo htmlspecialchars($match['team1_name']);
+                        } elseif ($match['winner_id'] === $match['team2_id']) {
+                            echo htmlspecialchars($match['team2_name']);
+                        } else {
+                            echo '平局';
+                        }
+                        ?>
+                    </span>
+                </div>
             <?php endif; ?>
         </div>
-    </div>
-    
-    <div class="action-links">
-        <?php if ($match['match_status'] === 'pending'): ?>
-            <a href="/modules/competition/play.php?match_id=<?= $match_id ?>" class="button primary">進入比賽</a>
-        <?php elseif ($match['match_status'] === 'active' || $match['match_status'] === 'overtime'): ?>
-            <a href="/modules/competition/play.php?match_id=<?= $match_id ?>" class="button primary">繼續比賽</a>
-        <?php endif; ?>
         
-        <a href="edit.php?id=<?= $match_id ?>" class="button">編輯比賽</a>
-        <a href="list.php" class="button">返回比賽列表</a>
-        
-        <?php if ($match['group_id']): ?>
-            <a href="/modules/creategroup/view.php?id=<?= $match['group_id'] ?>" class="button">返回小組</a>
-        <?php endif; ?>
+        <div class="match-actions">
+            <?php if ($match['match_status'] === 'pending'): ?>
+                <a href="/modules/competition/play.php?match_id=<?= $match['match_id'] ?>" class="button primary">進入比賽</a>
+                <a href="edit.php?id=<?= $match['match_id'] ?>" class="button">編輯比賽</a>
+                <a href="delete.php?id=<?= $match['match_id'] ?>" class="button delete">刪除比賽</a>
+            <?php elseif ($match['match_status'] === 'active' || $match['match_status'] === 'overtime'): ?>
+                <a href="/modules/competition/play.php?match_id=<?= $match['match_id'] ?>" class="button primary">繼續比賽</a>
+            <?php endif; ?>
+            <a href="list.php" class="button secondary">返回列表</a>
+        </div>
     </div>
 </div>
 
 <style>
-    .match-info {
-        background-color: #f8f9fa;
-        border-radius: 5px;
+    .view-section {
+        max-width: 800px;
+        margin: 0 auto;
+    }
+    
+    .match-card {
+        background-color: #fff;
+        border: 1px solid #ddd;
+        border-radius: 8px;
         padding: 20px;
-        margin-bottom: 20px;
+        margin-top: 20px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     
     .match-header {
-        margin-bottom: 20px;
-        position: relative;
-    }
-    
-    .team-vs {
         display: flex;
         justify-content: space-between;
+        margin-bottom: 20px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid #eee;
+    }
+    
+    .match-number {
+        font-weight: bold;
+        font-size: 1.2em;
+    }
+    
+    .match-type {
+        background-color: #f8f9fa;
+        padding: 5px 10px;
+        border-radius: 4px;
+        font-size: 0.9em;
+    }
+    
+    .match-teams {
+        display: flex;
         align-items: center;
+        justify-content: space-between;
+        margin-bottom: 30px;
     }
     
     .team {
@@ -162,52 +183,89 @@ include __DIR__ . '/../../includes/header.php';
         text-align: center;
     }
     
-    .team h3 {
-        margin-top: 0;
+    .team-name {
+        font-size: 1.5em;
+        font-weight: bold;
+        margin-bottom: 10px;
+    }
+    
+    .team-score {
+        font-size: 2em;
+        font-weight: bold;
         color: #333;
     }
     
-    .versus {
-        font-size: 1.5rem;
-        font-weight: bold;
+    .vs {
         margin: 0 20px;
-        color: #666;
-    }
-    
-    .score {
-        font-size: 2rem;
-        font-weight: bold;
-        color: #007bff;
-        margin: 10px 0;
-    }
-    
-    .winner-badge, .draw-badge {
-        text-align: center;
-        padding: 8px;
-        border-radius: 4px;
-        margin-top: 15px;
-        font-weight: bold;
-    }
-    
-    .winner-badge {
-        background-color: #d4edda;
-        color: #155724;
-    }
-    
-    .draw-badge {
-        background-color: #fff3cd;
-        color: #856404;
+        font-size: 1.2em;
+        color: #777;
     }
     
     .match-details {
-        background-color: #fff;
-        border-radius: 4px;
+        background-color: #f8f9fa;
         padding: 15px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        border-radius: 4px;
+        margin-bottom: 20px;
     }
     
-    .match-details p {
-        margin: 8px 0;
+    .detail-item {
+        display: flex;
+        margin-bottom: 10px;
+    }
+    
+    .detail-item:last-child {
+        margin-bottom: 0;
+    }
+    
+    .label {
+        width: 120px;
+        font-weight: bold;
+        color: #555;
+    }
+    
+    .value {
+        flex: 1;
+    }
+    
+    .status-pending {
+        color: #6c757d;
+    }
+    
+    .status-active {
+        color: #007bff;
+        font-weight: bold;
+    }
+    
+    .status-overtime {
+        color: #fd7e14;
+        font-weight: bold;
+    }
+    
+    .status-completed {
+        color: #28a745;
+    }
+    
+    .match-actions {
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+        margin-top: 30px;
+    }
+    
+    .button {
+        padding: 8px 16px;
+        border: none;
+        border-radius: 4px;
+        background-color: #007bff;
+        color: white;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-block;
+        text-align: center;
+    }
+    
+    .button:hover {
+        background-color: #0069d9;
     }
     
     .button.primary {
@@ -216,6 +274,22 @@ include __DIR__ . '/../../includes/header.php';
     
     .button.primary:hover {
         background-color: #218838;
+    }
+    
+    .button.secondary {
+        background-color: #6c757d;
+    }
+    
+    .button.secondary:hover {
+        background-color: #5a6268;
+    }
+    
+    .button.delete {
+        background-color: #dc3545;
+    }
+    
+    .button.delete:hover {
+        background-color: #c82333;
     }
 </style>
 
