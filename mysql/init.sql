@@ -47,8 +47,8 @@ CREATE TABLE IF NOT EXISTS athletes (
 CREATE TABLE IF NOT EXISTS matches (
     match_id INT AUTO_INCREMENT PRIMARY KEY,
     match_number VARCHAR(50) NOT NULL,
-    team1_id INT NOT NULL,
-    team2_id INT NOT NULL,
+    team1_id INT NULL,
+    team2_id INT NULL,
     team1_score INT DEFAULT 0,
     team2_score INT DEFAULT 0,
     team1_fouls INT DEFAULT 0,

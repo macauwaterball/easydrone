@@ -173,7 +173,7 @@ document.addEventListener('DOMContentLoaded', function() {
     matches.forEach(match => {
         match.addEventListener('click', function() {
             const matchId = this.getAttribute('data-match-id');
-            window.location.href = '../matches/view.php?id=' + matchId;
+            window.location.href = '../creatematches/view.php?id=' + matchId;
         });
     });
 });
