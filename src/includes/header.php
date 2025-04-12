@@ -75,6 +75,7 @@
                 <li><a href="/modules/createteam/list.php" <?= strpos($_SERVER['REQUEST_URI'], '/modules/createteam/') !== false ? 'class="active"' : '' ?>>隊伍管理</a></li>
                 <li><a href="/modules/creatematches/list.php" <?= strpos($_SERVER['REQUEST_URI'], '/modules/creatematches/') !== false ? 'class="active"' : '' ?>>比賽管理</a></li>
                 <li><a href="/modules/static/group_stats.php" <?= strpos($_SERVER['REQUEST_URI'], '/modules/static/group_stats.php') !== false ? 'class="active"' : '' ?>>小組統計</a></li>
+                <li><a href="/modules/tournaments/knockout_bracket.php" <?= strpos($_SERVER['REQUEST_URI'], '/modules/tournaments/knockout_bracket.php') !== false ? 'class="active"' : '' ?>>淘汰賽圖表</a></li>
                 <li><a href="/auth/logout.php">登出</a></li>
             </ul>
         </nav>

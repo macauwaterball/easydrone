@@ -128,3 +128,19 @@ JOIN teams t ON g.group_id = t.group_id;
 CREATE USER IF NOT EXISTS 'dronesoccer'@'%' IDENTIFIED BY 'dronesoccer123';
 GRANT ALL PRIVILEGES ON drone_soccer.* TO 'dronesoccer'@'%';
 FLUSH PRIVILEGES;
+
+
+-- 新增：淘汰賽結構表
+CREATE TABLE IF NOT EXISTS knockout_brackets (
+    bracket_id INT AUTO_INCREMENT PRIMARY KEY,
+    tournament_id INT NULL,
+    match_id INT NOT NULL,
+    round_number INT NOT NULL,
+    position_in_round INT NOT NULL,
+    next_match_id INT NULL,
+    is_winner_bracket BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tournament_id) REFERENCES tournaments(tournament_id) ON DELETE SET NULL,
+    FOREIGN KEY (match_id) REFERENCES matches(match_id) ON DELETE CASCADE,
+    FOREIGN KEY (next_match_id) REFERENCES matches(match_id) ON DELETE SET NULL
+);

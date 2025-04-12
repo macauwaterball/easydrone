@@ -263,6 +263,94 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             
             // 提交事務
+            // 在創建比賽後，添加以下代碼來創建淘汰賽結構
+            // 在 $pdo->commit(); 之前添加
+            
+            // 創建淘汰賽結構
+            $round_number = 1;
+            if ($tournament_stage == 'round_of_16') {
+                $round_number = 1;
+            } elseif ($tournament_stage == 'quarter_final') {
+                $round_number = 2;
+            } elseif ($tournament_stage == 'semi_final') {
+                $round_number = 3;
+            } elseif ($tournament_stage == 'final') {
+                $round_number = 4;
+            } elseif ($tournament_stage == 'third_place') {
+                $round_number = 4;
+            }
+            
+            // 創建淘汰賽結構記錄
+            for ($i = 0; $i < count($matches); $i++) {
+                $position_in_round = $i + 1;
+                $next_match_id = null;
+                
+                // 計算下一輪的比賽ID
+                if (!empty($next_stage)) {
+                    $next_match_index = floor($i / 2);
+                    if (isset($next_matches[$next_match_index])) {
+                        $next_match_id = $next_matches[$next_match_index]['match_id'];
+                    }
+                }
+                
+                $stmt = $pdo->prepare("
+                    INSERT INTO knockout_brackets (
+                        tournament_id, match_id, round_number, position_in_round, next_match_id
+                    ) VALUES (?, ?, ?, ?, ?)
+                ");
+                $stmt->execute([
+                    null, // 暫時不關聯到特定的tournament_id
+                    $matches[$i]['match_id'],
+                    $round_number,
+                    $position_in_round,
+                    $next_match_id
+                ]);
+            }
+            
+            // 如果創建了下一輪比賽，也為它們創建淘汰賽結構
+            if (!empty($next_stage)) {
+                $next_round_number = $round_number + 1;
+                
+                for ($i = 0; $i < $next_match_count; $i++) {
+                    $position_in_round = $i + 1;
+                    $next_match_id = null;
+                    
+                    // 如果是半決賽，下一場是決賽
+                    if ($next_stage == 'semi_final' && $i < 2) {
+                        $next_match_id = $next_matches[$next_match_count]['match_id']; // 決賽ID
+                    }
+                    
+                    $stmt = $pdo->prepare("
+                        INSERT INTO knockout_brackets (
+                            tournament_id, match_id, round_number, position_in_round, next_match_id
+                        ) VALUES (?, ?, ?, ?, ?)
+                    ");
+                    $stmt->execute([
+                        null,
+                        $next_matches[$i]['match_id'],
+                        $next_round_number,
+                        $position_in_round,
+                        $next_match_id
+                    ]);
+                }
+                
+                // 如果創建了季軍賽
+                if ($next_stage == 'final') {
+                    $stmt = $pdo->prepare("
+                        INSERT INTO knockout_brackets (
+                            tournament_id, match_id, round_number, position_in_round, next_match_id, is_winner_bracket
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                    ");
+                    $stmt->execute([
+                        null,
+                        $next_matches[$next_match_count]['match_id'], // 季軍賽ID
+                        $next_round_number,
+                        3, // 位置3表示季軍賽
+                        null,
+                        false // 不是勝者組
+                    ]);
+                }
+            }
             $pdo->commit();
             
             $message = "成功創建 $match_count 場淘汰賽";
