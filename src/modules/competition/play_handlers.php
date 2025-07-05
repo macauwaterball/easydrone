@@ -1,5 +1,4 @@
 <?php
-<<<<<<< HEAD
 // Helper function to validate CSRF token
 function validateCsrfToken() {
     if (empty($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
@@ -18,10 +17,6 @@ function handleStartMatch($pdo, $match_id, $match) {
         return $csrf_error;
     }
 
-=======
-// 处理比赛开始
-function handleStartMatch($pdo, $match_id, $match) {
->>>>>>> 7209f678063e8c322a0b2276eb0e92aa5927b45f
     if (!isset($_POST['start_match']) || $match['match_status'] !== 'pending') {
         return null;
     }
@@ -59,15 +54,12 @@ function handleStartMatch($pdo, $match_id, $match) {
 
 // 处理上半场结束，开始下半场
 function handleEndFirstHalf($pdo, $match_id, $match) {
-<<<<<<< HEAD
     // Validate CSRF token first
     $csrf_error = validateCsrfToken();
     if ($csrf_error) {
         return $csrf_error;
     }
 
-=======
->>>>>>> 7209f678063e8c322a0b2276eb0e92aa5927b45f
     // 检查是否是结束上半场的请求
     if (!isset($_POST['end_first_half'])) {
         return null;
