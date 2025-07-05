@@ -1,6 +1,22 @@
 <?php
+// Helper function to validate CSRF token
+function validateCsrfToken() {
+    if (empty($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+        // For security, regenerate token on failure
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+        return "CSRF 驗證失敗，請重試。";
+    }
+    return null; // Token is valid
+}
+
 // 处理比赛开始
 function handleStartMatch($pdo, $match_id, $match) {
+    // Validate CSRF token first
+    $csrf_error = validateCsrfToken();
+    if ($csrf_error) {
+        return $csrf_error;
+    }
+
     if (!isset($_POST['start_match']) || $match['match_status'] !== 'pending') {
         return null;
     }
@@ -38,6 +54,12 @@ function handleStartMatch($pdo, $match_id, $match) {
 
 // 处理上半场结束，开始下半场
 function handleEndFirstHalf($pdo, $match_id, $match) {
+    // Validate CSRF token first
+    $csrf_error = validateCsrfToken();
+    if ($csrf_error) {
+        return $csrf_error;
+    }
+
     // 检查是否是结束上半场的请求
     if (!isset($_POST['end_first_half'])) {
         return null;
