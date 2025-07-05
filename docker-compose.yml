@@ -49,3 +49,4 @@ services:
 networks:
   easydrone-network:  # 修正了網絡名稱的拼寫錯誤
     driver: bridge
+# 2025/7/6
