@@ -39,9 +39,9 @@ foreach ($groups as $group) {
                 t.team_id,
                 t.team_name,
                 COUNT(DISTINCT m.match_id) as played,
-                SUM(CASE WHEN m.winner_team_id = t.team_id THEN 1 ELSE 0 END) as won,
-                SUM(CASE WHEN m.winner_team_id IS NULL AND m.match_status = 'completed' THEN 1 ELSE 0 END) as drawn,
-                SUM(CASE WHEN m.winner_team_id IS NOT NULL AND m.winner_team_id != t.team_id AND m.match_status = 'completed' THEN 1 ELSE 0 END) as lost,
+                SUM(CASE WHEN m.winner_id = t.team_id THEN 1 ELSE 0 END) as won,
+                SUM(CASE WHEN m.winner_id IS NULL AND m.match_status = 'completed' THEN 1 ELSE 0 END) as drawn,
+                SUM(CASE WHEN m.winner_id IS NOT NULL AND m.winner_id != t.team_id AND m.match_status = 'completed' THEN 1 ELSE 0 END) as lost,
                 SUM(CASE WHEN m.team1_id = t.team_id THEN m.team1_score ELSE m.team2_score END) as goals_for,
                 SUM(CASE WHEN m.team1_id = t.team_id THEN m.team2_score ELSE m.team1_score END) as goals_against
             FROM 
@@ -53,7 +53,7 @@ foreach ($groups as $group) {
             GROUP BY 
                 t.team_id
             ORDER BY 
-                SUM(CASE WHEN m.winner_team_id = t.team_id THEN 3 WHEN m.winner_team_id IS NULL AND m.match_status = 'completed' THEN 1 ELSE 0 END) DESC,
+                SUM(CASE WHEN m.winner_id = t.team_id THEN 3 WHEN m.winner_id IS NULL AND m.match_status = 'completed' THEN 1 ELSE 0 END) DESC,
                 (SUM(CASE WHEN m.team1_id = t.team_id THEN m.team1_score ELSE m.team2_score END) - SUM(CASE WHEN m.team1_id = t.team_id THEN m.team2_score ELSE m.team1_score END)) DESC
         ");
         $stmt->execute([$group_id]);

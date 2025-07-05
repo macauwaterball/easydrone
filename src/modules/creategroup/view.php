@@ -313,8 +313,29 @@ include __DIR__ . '/../../includes/header.php';
         <h3>小組比賽</h3>
         
         <div class="action-links">
-            <a href="/modules/creatematches/create.php?group_id=<?= $group_id ?>" class="button">為此小組創建比賽</a>
+            <a href="../createteam/create.php?group_id=<?= $group_id ?>" class="button">添加隊伍</a>
         </div>
+    </div>
+    
+    <div id="matches" class="tab-pane">
+        <!-- 比賽列表內容 -->
+        <h3>小組比賽</h3>
+        
+        <?php
+        // 獲取小組比賽
+        $stmt = $pdo->prepare("
+            SELECT m.*, 
+                   t1.team_name as team1_name, 
+                   t2.team_name as team2_name
+            FROM matches m
+            JOIN teams t1 ON m.team1_id = t1.team_id
+            JOIN teams t2 ON m.team2_id = t2.team_id
+            WHERE m.group_id = ?
+            ORDER BY m.match_date
+        ");
+        $stmt->execute([$group_id]);
+        $matches = $stmt->fetchAll();
+        ?>
         
         <?php if (count($matches) > 0): ?>
             <table class="data-table">
@@ -336,34 +357,38 @@ include __DIR__ . '/../../includes/header.php';
                             <?= htmlspecialchars($match['team1_name']) ?> vs <?= htmlspecialchars($match['team2_name']) ?>
                         </td>
                         <td>
-                            <?= htmlspecialchars($match['team1_score']) ?> : <?= htmlspecialchars($match['team2_score']) ?>
+                            <?php if ($match['match_status'] !== 'pending'): ?>
+                                <?= htmlspecialchars($match['team1_score']) ?> : <?= htmlspecialchars($match['team2_score']) ?>
+                            <?php else: ?>
+                                -
+                            <?php endif; ?>
                         </td>
                         <td>
                             <?php
-                            $status = '';
                             switch ($match['match_status']) {
                                 case 'pending':
-                                    $status = '待開始';
+                                    echo '待開始';
                                     break;
                                 case 'active':
-                                    $status = '進行中';
-                                    break;
-                                case 'completed':
-                                    $status = '已完成';
+                                    echo '進行中';
                                     break;
                                 case 'overtime':
-                                    $status = '加時賽';
+                                    echo '加時賽';
+                                    break;
+                                case 'completed':
+                                    echo '已完成';
                                     break;
                             }
-                            echo htmlspecialchars($status);
                             ?>
                         </td>
                         <td><?= htmlspecialchars($match['match_date']) ?></td>
-                        <td>
+                        <td class="actions">
+                            <a href="../creatematches/view.php?id=<?= $match['match_id'] ?>" class="button small">查看</a>
+                            
                             <?php if ($match['match_status'] === 'pending'): ?>
-                                <a href="/modules/competition/play.php?match_id=<?= $match['match_id'] ?>" class="button small">進入比賽</a>
-                            <?php elseif ($match['match_status'] === 'completed'): ?>
-                                <a href="/modules/creatematches/view.php?id=<?= $match['match_id'] ?>" class="button small">查看結果</a>
+                                <a href="/modules/competition/play.php?match_id=<?= $match['match_id'] ?>" class="button small primary">進入比賽</a>
+                            <?php elseif ($match['match_status'] === 'active' || $match['match_status'] === 'overtime'): ?>
+                                <a href="/modules/competition/play.php?match_id=<?= $match['match_id'] ?>" class="button small primary">繼續比賽</a>
                             <?php endif; ?>
                         </td>
                     </tr>
@@ -371,67 +396,18 @@ include __DIR__ . '/../../includes/header.php';
                 </tbody>
             </table>
         <?php else: ?>
-            <p class="no-data">此小組暫無比賽</p>
+            <p class="no-data">暫無比賽數據</p>
         <?php endif; ?>
+        
+        <div class="action-links">
+            <a href="../creatematches/create.php?group_id=<?= $group_id ?>" class="button">添加單場比賽</a>
+            <a href="../creatematches/create_group_matches.php?group_id=<?= $group_id ?>" class="button primary">為此小組創建循環賽</a>
+        </div>
     </div>
     
-    <div id="standings" class="tab-content">
-        <h3>小組積分</h3>
-        
-        <?php
-        // 獲取小組積分
-        $stmt = $pdo->prepare("
-            SELECT s.*, t.team_name
-            FROM group_standings s
-            JOIN teams t ON s.team_id = t.team_id
-            WHERE s.group_id = ?
-            ORDER BY s.points DESC, s.goals_for - s.goals_against DESC, s.goals_for DESC
-        ");
-        $stmt->execute([$group_id]);
-        $standings = $stmt->fetchAll();
-        ?>
-        
-        <?php if (count($standings) > 0): ?>
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>排名</th>
-                        <th>隊伍</th>
-                        <th>比賽</th>
-                        <th>勝</th>
-                        <th>平</th>
-                        <th>負</th>
-                        <th>進球</th>
-                        <th>失球</th>
-                        <th>淨勝球</th>
-                        <th>積分</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php $rank = 1; ?>
-                    <?php foreach ($standings as $standing): ?>
-                    <tr>
-                        <td><?= $rank++ ?></td>
-                        <td><?= htmlspecialchars($standing['team_name']) ?></td>
-                        <td><?= $standing['played'] ?></td>
-                        <td><?= $standing['won'] ?></td>
-                        <td><?= $standing['drawn'] ?></td>
-                        <td><?= $standing['lost'] ?></td>
-                        <td><?= $standing['goals_for'] ?></td>
-                        <td><?= $standing['goals_against'] ?></td>
-                        <td><?= $standing['goals_for'] - $standing['goals_against'] ?></td>
-                        <td><strong><?= $standing['points'] ?></strong></td>
-                    </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        <?php else: ?>
-            <p class="no-data">此小組暫無積分數據</p>
-        <?php endif; ?>
-    </div>
-    
-    <div class="action-links">
-        <a href="list.php" class="button">返回小組列表</a>
+    <div id="standings" class="tab-pane">
+        <!-- 積分榜內容 -->
+        <!-- 現有積分榜代碼 -->
     </div>
 </div>
 
