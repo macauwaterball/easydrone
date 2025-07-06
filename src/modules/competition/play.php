@@ -3,21 +3,12 @@ require_once __DIR__ . '/../../includes/auth_check.php';
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/play_functions.php';
 require_once __DIR__ . '/play_handlers.php';
-<<<<<<< HEAD
-require_once __DIR__ . '/../../includes/constants.php'; // Add this line
-=======
->>>>>>> 7209f678063e8c322a0b2276eb0e92aa5927b45f
 
 $db = Database::getInstance();
 $pdo = $db->getConnection();
 
-<<<<<<< HEAD
-// 移除每次頁面載入時的資料庫結構檢查
-// checkAndUpdateDatabaseStructure($pdo);
-=======
 // 检查数据库结构
 checkAndUpdateDatabaseStructure($pdo);
->>>>>>> 7209f678063e8c322a0b2276eb0e92aa5927b45f
 
 $match_id = $_GET['match_id'] ?? 0;
 
@@ -84,18 +75,6 @@ $show_referee_decision = isset($_GET['referee_decision']) ? true : false;
         <p><strong>状态：</strong> 
             <?php
             switch ($match['match_status']) {
-<<<<<<< HEAD
-                case MATCH_STATUS_PENDING: // Use constant here
-                    echo '待开始';
-                    break;
-                case MATCH_STATUS_ACTIVE: // Use constant here
-                    echo ($halfTime === HALF_TIME_FIRST) ? '上半场' : '下半场'; // Use constant here
-                    break;
-                case MATCH_STATUS_OVERTIME: // Use constant here
-                    echo '加时赛';
-                    break;
-                case MATCH_STATUS_COMPLETED: // Use constant here
-=======
                 case 'pending':
                     echo '待开始';
                     break;
@@ -106,7 +85,6 @@ $show_referee_decision = isset($_GET['referee_decision']) ? true : false;
                     echo '加时赛';
                     break;
                 case 'completed':
->>>>>>> 7209f678063e8c322a0b2276eb0e92aa5927b45f
                     echo '已结束';
                     break;
                 default:
@@ -121,10 +99,6 @@ $show_referee_decision = isset($_GET['referee_decision']) ? true : false;
         <div class="match-setup">
             <h3>开始比赛</h3>
             <form method="POST" action="">
-<<<<<<< HEAD
-                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
-=======
->>>>>>> 7209f678063e8c322a0b2276eb0e92aa5927b45f
                 <div class="form-group">
                     <label for="match_time_minutes">比赛时间（每半场）：</label>
                     <input type="number" id="match_time_minutes" name="match_time_minutes" min="0" max="60" value="5" required style="width: 60px;"> 分

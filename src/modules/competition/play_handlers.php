@@ -1,22 +1,6 @@
 <?php
-// Helper function to validate CSRF token
-function validateCsrfToken() {
-    if (empty($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
-        // For security, regenerate token on failure
-        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-        return "CSRF 驗證失敗，請重試。";
-    }
-    return null; // Token is valid
-}
-
 // 处理比赛开始
 function handleStartMatch($pdo, $match_id, $match) {
-    // Validate CSRF token first
-    $csrf_error = validateCsrfToken();
-    if ($csrf_error) {
-        return $csrf_error;
-    }
-
     if (!isset($_POST['start_match']) || $match['match_status'] !== 'pending') {
         return null;
     }
@@ -54,12 +38,6 @@ function handleStartMatch($pdo, $match_id, $match) {
 
 // 处理上半场结束，开始下半场
 function handleEndFirstHalf($pdo, $match_id, $match) {
-    // Validate CSRF token first
-    $csrf_error = validateCsrfToken();
-    if ($csrf_error) {
-        return $csrf_error;
-    }
-
     // 检查是否是结束上半场的请求
     if (!isset($_POST['end_first_half'])) {
         return null;
@@ -166,113 +144,76 @@ function handleRefereeDecision($pdo, $match_id, $match) {
 
 // 处理比赛结束
 function handleEndMatch($pdo, $match_id, $match) {
-    if (!isset($_POST['end_match'])) {
-        return null;
-    }
-    
-    // 如果是上半场结束，则转为下半场
-    if ($match['match_status'] === 'active' && $match['half_time'] === 'first_half') {
-        return handleEndFirstHalf($pdo, $match_id, $match);
-    }
-    
-    // 如果是下半场结束
-    if ($match['match_status'] === 'active' && $match['half_time'] === 'second_half') {
-        $team1_score = (int)$_POST['team1_score'];
-        $team2_score = (int)$_POST['team2_score'];
-        $team1_fouls = (int)$_POST['team1_fouls'];
-        $team2_fouls = (int)$_POST['team2_fouls'];
-        
-        // 如果平局，根据犯规数量判断胜者
-        if ($team1_score == $team2_score) {
-            $winner_id = determineWinnerByFouls($match['team1_id'], $match['team2_id'], $team1_fouls, $team2_fouls);
-            
-            // 如果犯规也相同，则进入加时赛
-            if ($winner_id === null) {
-                // 显示加时赛对话框
-                $show_overtime = true;
-                return null;
-            }
-        } else {
-            // 根据得分判断胜者
-            $winner_id = ($team1_score > $team2_score) ? $match['team1_id'] : $match['team2_id'];
-        }
-        
+    if (isset($_POST['end_match'])) {
         try {
-            $stmt = $pdo->prepare("
-                UPDATE matches 
-                SET match_status = 'completed', 
-                    winner_id = ?,
-                    team1_score = ?,
-                    team2_score = ?,
-                    team1_fouls = ?,
-                    team2_fouls = ?,
-                    end_time = NOW()
-                WHERE match_id = ?
-            ");
-            $stmt->execute([$winner_id, $team1_score, $team2_score, $team1_fouls, $team2_fouls, $match_id]);
+            $pdo->beginTransaction();
             
-            // 如果是小组赛，更新积分
-            if ($match['group_id']) {
-                updateGroupStandings($pdo, $match['group_id'], $match['team1_id'], $match['team2_id'], $winner_id);
+            // 如果是上半场结束，则转为下半场
+            if ($match['match_status'] === 'active' && $match['half_time'] === 'first_half') {
+                return handleEndFirstHalf($pdo, $match_id, $match);
             }
             
-            // 重新加载页面以反映更改
-            header("Location: play.php?match_id=$match_id");
-            exit;
-        } catch (PDOException $e) {
-            return "更新比赛结果失败: " . $e->getMessage();
-        }
-    }
-    
-    // 如果是加时赛结束
-    if ($match['match_status'] === 'overtime') {
-        $team1_score = (int)$_POST['team1_score'];
-        $team2_score = (int)$_POST['team2_score'];
-        $team1_fouls = (int)$_POST['team1_fouls'];
-        $team2_fouls = (int)$_POST['team2_fouls'];
-        
-        // 如果加时赛后仍然平局，根据犯规数量判断胜者
-        if ($team1_score == $team2_score) {
-            $winner_id = determineWinnerByFouls($match['team1_id'], $match['team2_id'], $team1_fouls, $team2_fouls);
-            
-            // 如果犯规也相同，则需要裁判决定
-            if ($winner_id === null) {
-                // 重定向到裁判决定页面
-                header("Location: play.php?match_id=$match_id&referee_decision=1");
+            // 如果是下半场结束或加时赛结束
+            if (($match['match_status'] === 'active' && $match['half_time'] === 'second_half') || 
+                $match['match_status'] === 'overtime') {
+                
+                $team1_score = (int)$_POST['team1_score'];
+                $team2_score = (int)$_POST['team2_score'];
+                $team1_fouls = (int)$_POST['team1_fouls'];
+                $team2_fouls = (int)$_POST['team2_fouls'];
+                
+                // 如果平局，根据犯规数量判断胜者
+                if ($team1_score == $team2_score) {
+                    $winner_id = determineWinnerByFouls($match['team1_id'], $match['team2_id'], $team1_fouls, $team2_fouls);
+                    
+                    // 如果犯规也相同，且不是加时赛，则进入加时赛
+                    if ($winner_id === null && $match['match_status'] !== 'overtime') {
+                        $show_overtime = true;
+                        return null;
+                    }
+                } else {
+                    // 根据得分判断胜者
+                    $winner_id = ($team1_score > $team2_score) ? $match['team1_id'] : $match['team2_id'];
+                }
+                
+                // 更新比赛状态为已完成
+                $stmt = $pdo->prepare("
+                    UPDATE matches 
+                    SET match_status = 'completed',
+                        team1_score = ?,
+                        team2_score = ?,
+                        team1_fouls = ?,
+                        team2_fouls = ?,
+                        winner_id = ?
+                    WHERE match_id = ?
+                ");
+                $stmt->execute([
+                    $team1_score,
+                    $team2_score,
+                    $team1_fouls,
+                    $team2_fouls,
+                    $winner_id,
+                    $match_id
+                ]);
+                
+                // 添加淘汰赛处理逻辑
+                if ($match['match_type'] === 'knockout') {
+                    require_once __DIR__ . '/../tournaments/process_knockout.php';
+                    processKnockoutMatches();
+                }
+                
+                $pdo->commit();
+                
+                // 重定向到比赛列表页面
+                header('Location: /modules/creatematches/list.php?message=' . urlencode('比赛已成功结束'));
                 exit;
             }
-        } else {
-            // 根据得分判断胜者
-            $winner_id = ($team1_score > $team2_score) ? $match['team1_id'] : $match['team2_id'];
-        }
-        
-        try {
-            $stmt = $pdo->prepare("
-                UPDATE matches 
-                SET match_status = 'completed', 
-                    winner_id = ?,
-                    team1_score = ?,
-                    team2_score = ?,
-                    team1_fouls = ?,
-                    team2_fouls = ?,
-                    end_time = NOW()
-                WHERE match_id = ?
-            ");
-            $stmt->execute([$winner_id, $team1_score, $team2_score, $team1_fouls, $team2_fouls, $match_id]);
             
-            // 如果是小组赛，更新积分
-            if ($match['group_id']) {
-                updateGroupStandings($pdo, $match['group_id'], $match['team1_id'], $match['team2_id'], $winner_id);
-            }
-            
-            // 重新加载页面以反映更改
-            header("Location: play.php?match_id=$match_id");
-            exit;
-        } catch (PDOException $e) {
-            return "更新比赛结果失败: " . $e->getMessage();
+        } catch (Exception $e) {
+            $pdo->rollBack();
+            return "处理比赛结束时发生错误：" . $e->getMessage();
         }
     }
-    
     return null;
 }
 

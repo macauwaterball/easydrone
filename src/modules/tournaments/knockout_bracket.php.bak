@@ -161,10 +161,8 @@ include __DIR__ . '/../../includes/header.php';
         <?php endfor; ?>
     </div>
     
-    <!-- 在 bracket-actions div 中添加處理按鈕 -->
     <div class="bracket-actions">
         <a href="../creatematches/list.php" class="button">返回比賽列表</a>
-        <a href="process_knockout.php?process=true" class="button">處理晉級隊伍</a>
     </div>
 </div>
 
@@ -181,100 +179,86 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 
-<!-- 修改 style 標籤內的樣式 -->
 <style>
+.bracket-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.stage-filter {
+    margin-bottom: 20px;
+}
+
 .tournament-bracket {
     display: flex;
     overflow-x: auto;
-    padding: 40px 20px;
-    align-items: center;
-    min-height: 800px;
-    gap: 50px;
+    padding-bottom: 20px;
 }
 
 .round {
-    flex: 0 0 300px;
-    display: flex;
-    flex-direction: column;
+    flex: 0 0 250px;
+    margin-right: 40px;
     position: relative;
 }
 
+.round-title {
+    text-align: center;
+    margin-bottom: 20px;
+    font-size: 18px;
+    color: #333;
+}
+
 .matches {
-    position: relative;
     display: flex;
     flex-direction: column;
-    justify-content: space-around;
-    height: 100%;
 }
 
 .match {
     background-color: #fff;
     border: 1px solid #ddd;
     border-radius: 4px;
-    margin: 20px 0;
-    padding: 10px;
-    position: relative;
-    z-index: 1;
-    width: 100%;
+    margin-bottom: 15px;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    transition: transform 0.2s, box-shadow 0.2s;
 }
 
-/* 修改連接線樣式 */
-.match::after {
-    content: '';
-    position: absolute;
-    right: -50px;
-    top: 50%;
-    width: 50px;
-    height: 2px;
-    background-color: #ddd;
+.match:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
 }
 
-.match::before {
-    content: '';
-    position: absolute;
-    right: -50px;
-    top: 50%;
-    height: 0;
-    width: 2px;
-    background-color: #ddd;
+.match-details {
+    display: flex;
+    justify-content: space-between;
+    padding: 5px 10px;
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #ddd;
+    font-size: 12px;
+    color: #666;
 }
 
-/* 為每一輪設置不同的間距 */
-.round:nth-child(1) .matches {
-    padding: 0;
-}
-
-.round:nth-child(2) .matches {
-    padding: 60px 0;
-}
-
-.round:nth-child(3) .matches {
-    padding: 120px 0;
-}
-
-.round:nth-child(4) .matches {
-    padding: 240px 0;
-}
-
-/* 為相鄰的比賽添加連接線 */
-.match:not(:last-child)::before {
-    content: '';
-    position: absolute;
-    right: -50px;
-    top: 50%;
-    height: calc(100% + 40px);
-    width: 2px;
-    background-color: #ddd;
-}
-
-/* 其他樣式保持不變 */
 .team {
     display: flex;
     justify-content: space-between;
-    align-items: center;
     padding: 8px 10px;
-    border-left: 4px solid transparent;
-    margin: 5px 0;
+    border-bottom: 1px solid #eee;
+}
+
+.team:last-child {
+    border-bottom: none;
+}
+
+.team.winner {
+    background-color: #e8f5e9;
+    font-weight: bold;
+}
+
+.team.virtual-team {
+    color: #999;
+    font-style: italic;
+    background-color: #f5f5f5;
 }
 
 .team-name {
@@ -289,38 +273,36 @@ document.addEventListener('DOMContentLoaded', function() {
     margin-left: 10px;
 }
 
-.round-title {
+.no-matches {
     text-align: center;
-    margin-bottom: 20px;
-    font-size: 18px;
-    color: #333;
-}
-
-/* 添加一些輔助樣式來改善視覺效果 */
-.bracket-container {
-    max-width: 1400px;
-    margin: 0 auto;
     padding: 20px;
-    overflow-x: auto;
+    color: #999;
+    font-style: italic;
 }
 
-/* 響應式設計調整 */
+.bracket-actions {
+    margin-top: 20px;
+    text-align: center;
+}
+
+.button {
+    display: inline-block;
+    padding: 8px 16px;
+    background-color: #007bff;
+    color: white;
+    text-decoration: none;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+.button:hover {
+    background-color: #0069d9;
+}
+
 @media (max-width: 768px) {
-    .tournament-bracket {
-        gap: 30px;
-    }
-    
     .round {
-        flex: 0 0 250px;
-    }
-    
-    .match::after {
-        width: 30px;
-        right: -30px;
-    }
-    
-    .match::before {
-        right: -30px;
+        flex: 0 0 200px;
+        margin-right: 20px;
     }
 }
 </style>
